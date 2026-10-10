@@ -1,617 +1,1328 @@
 <!DOCTYPE html>
-<!-- Dit au navigateur que c'est une page HTML5 -->
+<!-- ==========================================================================
+     BUDGET : suivi des dépenses mensuelles à deux, en temps réel.
+     Version complète : seuils par mois, catégories personnalisables,
+     graphiques, comparaison entre mois, hors ligne, export CSV.
+     ========================================================================== -->
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <!-- Permet d'afficher correctement la page sur téléphone (sans cette ligne, elle serait minuscule) -->
+  <!-- Sans cette ligne, la page serait minuscule sur téléphone -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Budget</title>
-  <!-- Fiche d'identité de l'appli (nom, icônes, couleurs) -->
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#2c7be5">
-<!-- Icône utilisée sur iPhone -->
-<link rel="apple-touch-icon" href="icon-192.png">
+
+  <!-- Fiche d'identité de l'appli installable (nom, icônes, couleurs) -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2468c9">
+  <link rel="apple-touch-icon" href="icon-192.png">
 
   <style>
-    /* Style de toute la page */
+    /* ---------- Les couleurs sont définies une seule fois, ici ---------- */
+    :root {
+      --encre: #1c2b3a;     /* texte principal */
+      --gris: #66727f;      /* texte secondaire */
+      --fond: #f5f6f8;      /* fond de la page */
+      --ligne: #dde2e8;     /* bordures fines */
+      --bleu: #2468c9;
+      --vert: #1f9d55;
+      --orange: #e08a00;
+      --rouge: #c8372d;
+    }
+
+    * { box-sizing: border-box; }
+    /* L'attribut "hidden" doit toujours cacher l'élément */
+    [hidden] { display: none !important; }
+
     body {
-      font-family: sans-serif;
-      margin: 0;               /* pas de marge autour de la page */
-      background: #f4f4f4;     /* fond gris clair */
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      background: var(--fond);
+      color: var(--encre);
+      line-height: 1.4;
     }
-    /* Bandeau du haut */
-    header {
-      background: #2c7be5;     /* bleu */
-      color: white;
-      padding: 16px;
-      text-align: center;
-    }
-    /* Contenu principal : centré et limité en largeur (pensé pour mobile) */
-    main {
-      max-width: 480px;
-      margin: 0 auto;
-      padding: 16px;
-    }
-            /* Les étiquettes au-dessus de chaque champ */
-        label {
-          display: block;          /* chaque étiquette sur sa propre ligne */
-          margin-top: 12px;
-          font-weight: bold;
-        }
-        /* Les champs et le bouton prennent toute la largeur */
-        select, input, button {
-          width: 100%;
-          box-sizing: border-box;  /* la bordure et le padding comptent dans la largeur */
-          padding: 10px;
-          margin-top: 4px;
-          font-size: 16px;         /* évite le zoom automatique sur iPhone */
-        }
-        button {
-          background: #2c7be5;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          margin-top: 16px;
-        }
 
-    #btn-deconnexion { background: #888; margin-top: 0; }  /* bouton gris, plus discret */
-    #erreur-connexion { color: #c0392b; }                  /* message d'erreur en rouge */
+    header { background: var(--bleu); color: #fff; padding: 16px; text-align: center; }
+    h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    h2 { margin: 0 0 12px; font-size: 18px; font-weight: 700; }
 
-    .categorie { margin-top: 12px; }
-/* La barre grise (le "fond") et le remplissage coloré par-dessus */
-.barre { background: #ddd; border-radius: 6px; height: 12px; overflow: hidden; margin-top: 4px; }
-.remplissage { height: 100%; background: #27ae60; }      /* vert */
-.remplissage.orange { background: #f39c12; }             /* 80 % du seuil atteint */
-.remplissage.rouge { background: #c0392b; }              /* seuil dépassé */
-#btn-export { background: #555; }
-    
-#btn-annuler { background: #888; }
-li { margin-top: 10px; }
-/* Petits boutons "Modifier" / "Supprimer" dans la liste */
-li button { width: auto; margin: 4px 6px 0 0; padding: 4px 10px; font-size: 14px; }
-    
+    /* Contenu principal : colonne centrée, pensée pour le mobile */
+    main { max-width: 520px; margin: 0 auto; padding: 16px 16px 40px; }
+
+    /* Un bloc de contenu */
+    .carte {
+      background: #fff;
+      border: 1px solid var(--ligne);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    /* ---------- Formulaires ---------- */
+    label { display: block; margin-top: 12px; font-weight: 600; font-size: 14px; }
+    label:first-child { margin-top: 0; }
+    select, input, button {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px 12px;
+      margin-top: 4px;
+      font-size: 16px;                 /* évite le zoom automatique sur iPhone */
+      font-family: inherit;
+      color: inherit;
+      border: 1px solid var(--ligne);
+      border-radius: 8px;
+      background: #fff;
+    }
+    button {
+      background: var(--bleu);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      margin-top: 16px;
+      cursor: pointer;
+    }
+    button.secondaire { background: #e8edf3; color: var(--encre); }
+    button.danger { background: #fbe9e7; color: var(--rouge); }
+    /* Petits boutons (dans les listes) */
+    button.petit {
+      width: auto;
+      min-height: 0;
+      padding: 6px 12px;
+      font-size: 14px;
+      margin: 8px 8px 0 0;
+    }
+    #erreur-connexion { color: var(--rouge); margin: 12px 0 0; }
+
+    /* ---------- Barre du haut ---------- */
+    .barre-utilisateur {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .barre-utilisateur button { margin: 0; }
+
+    /* ---------- Résumé du mois ---------- */
+    .hero .gros { font-size: 32px; font-weight: 700; line-height: 1.1; }
+    .hero .sous { color: var(--gris); font-size: 14px; margin-top: 4px; }
+    .categorie { margin-top: 16px; }
+    .ligne-cat { display: flex; justify-content: space-between; gap: 8px; }
+    .detail-cat { color: var(--gris); font-size: 14px; }
+    /* La barre grise (le fond) et le remplissage coloré par-dessus */
+    .barre { background: #e6eaef; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px; }
+    .remplissage { height: 100%; background: var(--vert); }
+    .remplissage.orange { background: var(--orange); }   /* 80 % du seuil atteint */
+    .remplissage.rouge { background: var(--rouge); }     /* seuil dépassé */
+
+    /* ---------- Graphiques ---------- */
+    .donut { display: block; width: 180px; margin: 0 auto; }
+    .graphique { display: block; width: 100%; height: auto; }
+    .legende .ligne-legende { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
+    .pastille { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+    .legende .valeur { margin-left: auto; font-weight: 600; white-space: nowrap; }
+
+    /* ---------- Tableau de comparaison ---------- */
+    .defilement { overflow-x: auto; }
+    .tableau { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .tableau th, .tableau td { padding: 8px 4px; text-align: right; border-bottom: 1px solid var(--ligne); }
+    .tableau th:first-child, .tableau td:first-child { text-align: left; }
+    .tableau th { color: var(--gris); font-weight: 600; }
+    .tableau tr.total td { font-weight: 700; border-bottom: none; }
+    .hausse { color: var(--rouge); }
+    .baisse { color: var(--vert); }
+    .note { color: var(--gris); font-size: 13px; margin: 10px 0 0; }
+
+    /* ---------- Vue par jour et liste des dépenses ---------- */
+    .ligne-jour { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--ligne); }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { padding: 12px 0; border-bottom: 1px solid var(--ligne); }
+    li:last-child, .ligne-jour:last-child { border-bottom: none; }
+    .ligne-depense { display: flex; justify-content: space-between; gap: 8px; }
+    .meta { color: var(--gris); font-size: 13px; }
+    .vide { color: var(--gris); margin: 0; }
+
+    /* ---------- Réglages repliables (seuils, catégories) ---------- */
+    details {
+      background: #fff;
+      border: 1px solid var(--ligne);
+      border-radius: 12px;
+      margin-top: 16px;
+    }
+    summary {
+      list-style: none;                  /* on enlève la petite flèche par défaut */
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 60px;                  /* grande zone à toucher avec le doigt */
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "▾"; color: var(--bleu); font-size: 22px; transition: transform 0.2s; }
+    details[open] > summary::after { transform: rotate(180deg); }
+    details[open] > summary { border-bottom: 1px solid var(--ligne); }
+    .contenu-details { padding: 4px 16px 16px; }
+    .ligne-categorie { padding: 12px 0; border-bottom: 1px solid var(--ligne); }
+    .ligne-categorie:last-of-type { border-bottom: none; }
+    #info-seuils { color: var(--gris); font-size: 14px; margin: 12px 0 0; }
   </style>
 </head>
+
 <body>
   <header>
     <h1>Mon budget</h1>
   </header>
 
-  <!-- Écran de connexion : visible seulement si personne n'est connecté -->
-    <main id="ecran-connexion">
+  <!-- ======================= ÉCRAN DE CONNEXION ======================= -->
+  <main id="ecran-connexion">
+    <section class="carte">
+      <h2>Connexion</h2>
       <form id="form-connexion">
         <label for="email">E-mail</label>
-        <input type="email" id="email" required>
-    
+        <input type="email" id="email" required autocomplete="username">
+
         <label for="mdp">Mot de passe</label>
-        <input type="password" id="mdp" required>
-    
+        <input type="password" id="mdp" required autocomplete="current-password">
+
         <button type="submit">Se connecter</button>
         <p id="erreur-connexion"></p>
       </form>
-    </main>
-  
-
-  <!-- "hidden" = cachée au départ ; le script la montrera après la connexion -->
-<main id="ecran-appli" hidden>
-  <p>Connecté : <strong id="nom-utilisateur"></strong></p>
-  <button id="btn-deconnexion">Se déconnecter</button>
-  <label for="mois">Mois affiché</label>
-<!-- type="month" affiche un sélecteur de mois sur téléphone -->
-<input type="month" id="mois">
-<h2>Résumé du mois</h2>
-  <div id="resume"></div>
-  <h2>Par jour</h2>
-<div id="par-jour"></div>
-  
-    <!-- Le formulaire : chaque <label> décrit un champ, chaque <input>/<select> est le champ lui-même -->
-    <form id="form-depense">
-    
-      <label for="categorie">Catégorie</label>
-      <!-- <select> = liste déroulante -->
-      <select id="categorie">
-        <option>Alimentaire générale</option>
-        <option>Restaurant</option>
-        <option>Vêtements</option>
-        <option>Divers</option>
-      </select>
-    
-      <label for="date">Date</label>
-      <!-- type="date" affiche un calendrier sur téléphone -->
-      <input type="date" id="date">
-    
-      <label for="montant">Montant (€)</label>
-      <!-- type="number" affiche le clavier numérique ; step="0.01" autorise les centimes -->
-      <input type="number" id="montant" step="0.01" min="0">
-    
-      <label for="note">Note (facultatif)</label>
-      <input type="text" id="note">
-    
-      <button type="submit" id="btn-valider">Ajouter la dépense</button>
-      <!-- Caché sauf pendant une modification -->
-      <button type="button" id="btn-annuler" hidden>Annuler la modification</button>
-    </form>
-    <!-- <details> = bloc repliable, pratique sur mobile -->
-        <details>
-  <summary>Seuils du mois affiché (€)</summary>
-  <form id="form-seuils">
-    <!-- Texte d'information : d'où viennent les seuils affichés -->
-    <p id="info-seuils"></p>
-    <div id="champs-seuils"></div>
-    <button type="submit">Enregistrer les seuils de ce mois</button>
-  </form>
-</details>
-
-    <!-- Zone où s'affichera la liste des dépenses saisies -->
-    <h2>Dépenses saisies</h2>
-    <ul id="liste"></ul>
-    <button id="btn-export">Exporter en CSV</button>
-  
-    
+    </section>
   </main>
 
-    <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-      import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-           collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, doc, setDoc }
-    from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-      
-  // NOUVEAU : les outils de connexion
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
-    from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  <!-- ======================= APPLICATION ======================= -->
+  <!-- "hidden" : cachée tant que personne n'est connecté -->
+  <main id="ecran-appli" hidden>
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyCqOSzPuamD_Q-p5keXnzRzPpK7C9GN1m8",
-    authDomain: "budget-app-67ceb.firebaseapp.com",
-    projectId: "budget-app-67ceb",
-    storageBucket: "budget-app-67ceb.firebasestorage.app",
-    messagingSenderId: "939010447229",
-    appId: "1:939010447229:web:ecd2272109378898011e14"
-  };
+    <div class="barre-utilisateur">
+      <span>Connecté : <strong id="nom-utilisateur"></strong></span>
+      <button id="btn-deconnexion" class="petit secondaire">Se déconnecter</button>
+    </div>
 
-  const app = initializeApp(firebaseConfig);
-    // Cache local persistant : Firestore garde une copie des données sur l'appareil.
-  // Hors ligne, on peut consulter et saisir ; l'envoi se fait au retour du réseau.
-  // persistentMultipleTabManager : évite les problèmes si l'appli est ouverte dans plusieurs onglets.
-  const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-  });
-  const auth = getAuth(app);               // NOUVEAU : le service de connexion
-  const depensesRef = collection(db, "depenses");
+    <!-- Saisie d'une dépense -->
+    <section class="carte">
+      <h2>Nouvelle dépense</h2>
+      <form id="form-depense">
+        <label for="categorie">Catégorie</label>
+        <!-- Les options sont créées par le script à partir de la liste des catégories -->
+        <select id="categorie"></select>
 
-  // --- Éléments de la page ---
-  const formulaire = document.getElementById("form-depense");
-  const liste = document.getElementById("liste");
-  // NOUVEAU
-  const ecranConnexion = document.getElementById("ecran-connexion");
-  const ecranAppli = document.getElementById("ecran-appli");
-  const formConnexion = document.getElementById("form-connexion");
-  const erreurConnexion = document.getElementById("erreur-connexion");
-  const nomUtilisateur = document.getElementById("nom-utilisateur");
-  const btnDeconnexion = document.getElementById("btn-deconnexion");
+        <label for="date">Date</label>
+        <input type="date" id="date">
 
-  function dateDuJour() {
-    return new Date().toLocaleDateString("sv-SE");
-  }
-  document.getElementById("date").value = dateDuJour();
+        <label for="montant">Montant (€)</label>
+        <input type="number" id="montant" step="0.01" min="0" inputmode="decimal">
 
-  // NOUVEAU : nom court affiché = ce qui est avant le "@" de l'e-mail
-  function nomCourt(utilisateur) {
-    return utilisateur.email.split("@")[0];
-  }
+        <label for="note">Note (facultatif)</label>
+        <input type="text" id="note">
 
-  // --- NOUVEAU : CONNEXION ---
-  formConnexion.addEventListener("submit", async function (event) {
-    event.preventDefault();
-    erreurConnexion.textContent = "";
-    try {
-      await signInWithEmailAndPassword(
-        auth,
-        document.getElementById("email").value,
-        document.getElementById("mdp").value
-      );
-      formConnexion.reset();   // on efface le mot de passe saisi
-    } catch (erreur) {
-      erreurConnexion.textContent = "E-mail ou mot de passe incorrect.";
-    }
-  });
+        <button type="submit" id="btn-valider">Ajouter la dépense</button>
+        <!-- Visible seulement pendant la modification d'une dépense -->
+        <button type="button" id="btn-annuler" class="secondaire" hidden>Annuler la modification</button>
+      </form>
+    </section>
 
-  // --- NOUVEAU : DÉCONNEXION ---
-  btnDeconnexion.addEventListener("click", function () {
-    signOut(auth);
-  });
+    <!-- Choix du mois : tout ce qui suit se rapporte à ce mois -->
+    <section class="carte">
+      <label for="mois">Mois affiché</label>
+      <input type="month" id="mois">
+    </section>
 
-    // --- ÉDITION D'UNE DÉPENSE ---
-  const btnValider = document.getElementById("btn-valider");
-  const btnAnnuler = document.getElementById("btn-annuler");
-  // Identifiant de la dépense en cours de modification (null = on en ajoute une nouvelle)
-  let depenseEnEdition = null;
+    <section class="carte">
+      <h2>Résumé du mois</h2>
+      <div id="resume"></div>
+    </section>
 
-  // Charge une dépense dans le formulaire pour la modifier
-  function commencerEdition(d) {
-    depenseEnEdition = d.id;
-    document.getElementById("categorie").value = d.categorie;
-    document.getElementById("date").value = d.date;
-    document.getElementById("montant").value = d.montant;
-    document.getElementById("note").value = d.note || "";
-    btnValider.textContent = "Enregistrer la modification";
-    btnAnnuler.hidden = false;
-    formulaire.scrollIntoView({ behavior: "smooth" });   // remonte vers le formulaire
-  }
+    <section class="carte">
+      <h2>Répartition par catégorie</h2>
+      <div id="graph-repartition"></div>
+    </section>
 
-  // Remet le formulaire en mode "ajout"
-  function terminerEdition() {
-    depenseEnEdition = null;
-    formulaire.reset();
-    document.getElementById("date").value = dateDuJour();
-    btnValider.textContent = "Ajouter la dépense";
-    btnAnnuler.hidden = true;
-  }
+    <section class="carte">
+      <h2>Évolution des dépenses</h2>
+      <div id="graph-evolution"></div>
+    </section>
 
-  btnAnnuler.addEventListener("click", terminerEdition);
+    <section class="carte">
+      <h2>Comparaison avec le mois précédent</h2>
+      <div id="comparaison"></div>
+    </section>
 
-  // --- ENVOI D'UNE DÉPENSE (ajout OU modification) ---
-  formulaire.addEventListener("submit", function (event) {
-    event.preventDefault();
+    <section class="carte">
+      <h2>Par jour</h2>
+      <div id="par-jour"></div>
+    </section>
 
-    const depense = {
-      categorie: document.getElementById("categorie").value,
-      date: document.getElementById("date").value,
-      montant: parseFloat(document.getElementById("montant").value),
-      note: document.getElementById("note").value
+    <section class="carte">
+      <h2>Dépenses saisies</h2>
+      <ul id="liste"></ul>
+    </section>
+
+    <!-- Réglages repliables -->
+    <details>
+      <summary>🎯 Seuils du mois affiché (€)</summary>
+      <div class="contenu-details">
+        <form id="form-seuils">
+          <p id="info-seuils"></p>
+          <!-- Les champs sont créés par le script, un par catégorie active -->
+          <div id="champs-seuils"></div>
+          <button type="submit">Enregistrer les seuils de ce mois</button>
+        </form>
+      </div>
+    </details>
+
+    <details>
+      <summary>🏷️ Catégories</summary>
+      <div class="contenu-details">
+        <div id="liste-categories"></div>
+        <form id="form-categorie">
+          <label for="nouvelle-categorie">Nouvelle catégorie</label>
+          <input type="text" id="nouvelle-categorie">
+          <button type="submit">Ajouter la catégorie</button>
+        </form>
+      </div>
+    </details>
+
+    <button id="btn-export" class="secondaire">Exporter en CSV</button>
+  </main>
+
+  <script type="module">
+    // ======================================================================
+    // 0) FIREBASE : importation des outils et connexion au projet
+    // ======================================================================
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+             collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, doc, setDoc }
+      from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+    // La configuration indique à la page quel projet Firebase utiliser
+    // (ce n'est pas un secret : la sécurité vient des règles Firestore)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCqOSzPuamD_Q-p5keXnzRzPpK7C9GN1m8",
+      authDomain: "budget-app-67ceb.firebaseapp.com",
+      projectId: "budget-app-67ceb",
+      storageBucket: "budget-app-67ceb.firebasestorage.app",
+      messagingSenderId: "939010447229",
+      appId: "1:939010447229:web:ecd2272109378898011e14"
     };
 
-    if (isNaN(depense.montant) || depense.montant <= 0) {
-      alert("Entre un montant valide.");
-      return;
-    }
+    const app = initializeApp(firebaseConfig);
 
-    // Pas de "await" ici : on n'attend plus la confirmation du serveur.
-    // Hors ligne, la dépense apparaît tout de suite et sera envoyée au retour du réseau.
-    // .catch() affiche l'erreur si l'envoi est refusé.
-    if (depenseEnEdition) {
-      // updateDoc modifie la dépense existante, repérée par son id
-      updateDoc(doc(db, "depenses", depenseEnEdition), depense)
-        .catch(function (erreur) { alert("Erreur de modification : " + erreur.message); });
-    } else {
-      depense.saisiPar = nomCourt(auth.currentUser);   // on ne change pas "saisi par" lors d'une modification
-      addDoc(depensesRef, depense)
-        .catch(function (erreur) { alert("Erreur d'enregistrement : " + erreur.message); });
-    }
-    terminerEdition();
-  });
-      
-  // --- LECTURE EN TEMPS RÉEL ---
-  // NOUVEAU : on ne l'active plus au chargement mais APRÈS la connexion.
-  // onSnapshot renvoie une fonction qui permet d'arrêter l'écoute : on la garde.
-  let arreterEcoute = null;
-
-      function demarrerEcoute() {
-    const requete = query(depensesRef, orderBy("date", "desc"));
-    arreterEcoute = onSnapshot(
-      requete,
-      function (snapshot) {
-        toutesLesDepenses = [];
-        snapshot.forEach(function (doc) {
-          // "...doc.data()" recopie tous les champs de la dépense ;
-          // on y ajoute son identifiant (id), dont on aura besoin à l'étape 8
-          toutesLesDepenses.push({ id: doc.id, ...doc.data() });
-        });
-        afficherTout();                 // liste + résumé + vue par jour
-      },
-      function (erreur) {
-        console.error("Erreur de lecture :", erreur);
-      }
-    );
-  }
-
-      // --- SEUILS PAR MOIS ---
-  const CATEGORIES = ["Alimentaire générale", "Restaurant", "Vêtements", "Divers"];
-
-  // Une collection "seuils" : un document par mois, dont l'identifiant est le mois ("2026-10")
-  const seuilsCol = collection(db, "seuils");
-
-  const champsSeuils = document.getElementById("champs-seuils");
-  const formSeuils = document.getElementById("form-seuils");
-  const infoSeuils = document.getElementById("info-seuils");
-
-  // Un champ numérique par catégorie
-  for (const nom of CATEGORIES) {
-    const etiquette = document.createElement("label");
-    etiquette.textContent = nom;
-
-    const champ = document.createElement("input");
-    champ.type = "number";
-    champ.min = "0";
-    champ.dataset.categorie = nom;
-
-    champsSeuils.appendChild(etiquette);
-    champsSeuils.appendChild(champ);
-  }
-
-  // Enregistrement : les seuils sont écrits dans le document du MOIS AFFICHÉ
-  formSeuils.addEventListener("submit", async function (event) {
-    event.preventDefault();
-
-    const nouveauxSeuils = {};
-    for (const champ of champsSeuils.querySelectorAll("input")) {
-      nouveauxSeuils[champ.dataset.categorie] = parseFloat(champ.value) || 0;
-    }
-
-    const mois = moisAffiche();
-    try {
-      // doc(db, "seuils", mois) désigne le document de ce mois
-      await setDoc(doc(db, "seuils", mois), nouveauxSeuils);
-      alert("Seuils enregistrés pour " + mois + ".");
-    } catch (erreur) {
-      alert("Erreur : " + erreur.message);
-    }
-  });
-
-  // tousLesSeuils contient tous les mois : { "2026-09": {...}, "2026-10": {...} }
-  let tousLesSeuils = {};
-  // seuils = ceux du mois affiché, utilisés par afficherResume()
-  let seuils = {};
-  let arreterEcouteSeuils = null;
-
-  // Trouve les seuils à utiliser pour un mois donné
-  function seuilsEffectifs(mois) {
-    // Cas 1 : le mois a ses propres seuils
-    if (tousLesSeuils[mois]) {
-      return { valeurs: tousLesSeuils[mois], source: mois };
-    }
-    // Cas 2 : on cherche les mois PLUS ANCIENS qui ont des seuils.
-    // Comparer "2026-09" < "2026-10" fonctionne : l'ordre alphabétique suit l'ordre des dates.
-    const anterieurs = Object.keys(tousLesSeuils).filter(function (m) { return m < mois; }).sort();
-    if (anterieurs.length > 0) {
-      const source = anterieurs[anterieurs.length - 1];   // le plus récent d'entre eux
-      return { valeurs: tousLesSeuils[source], source: source };
-    }
-    // Cas 3 : rien du tout
-    return { valeurs: {}, source: null };
-  }
-
-  // Met à jour les seuils actifs, le texte d'information et les champs du formulaire
-  function majSeuils() {
-    const mois = moisAffiche();
-    const effectifs = seuilsEffectifs(mois);
-    seuils = effectifs.valeurs;
-
-    if (effectifs.source === mois) {
-      infoSeuils.textContent = "Seuils enregistrés pour " + mois + ".";
-    } else if (effectifs.source) {
-      infoSeuils.textContent = "Aucun seuil enregistré pour " + mois + " : ceux de " +
-        effectifs.source + " sont repris. Enregistre pour les fixer pour ce mois.";
-    } else {
-      infoSeuils.textContent = "Aucun seuil défini pour " + mois + ".";
-    }
-
-    // On ne remplit pas les champs si quelqu'un est en train de les modifier
-    if (!formSeuils.contains(document.activeElement)) {
-      for (const champ of champsSeuils.querySelectorAll("input")) {
-        champ.value = seuils[champ.dataset.categorie] ?? "";
-      }
-    }
-  }
-
-  // Écoute en temps réel de TOUTE la collection des seuils (un document par mois)
-  function demarrerEcouteSeuils() {
-    arreterEcouteSeuils = onSnapshot(seuilsCol, function (snapshot) {
-      tousLesSeuils = {};
-      snapshot.forEach(function (document_) {
-        tousLesSeuils[document_.id] = document_.data();   // l'id du document = le mois
-      });
-      afficherTout();
+    // Cache local persistant : hors ligne, on peut consulter et saisir ;
+    // l'envoi se fait au retour du réseau.
+    const db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
     });
-  }
-      
-      // --- RÉSUMÉ, VUE PAR JOUR ET LISTE (pour le mois choisi) ---
-  const resume = document.getElementById("resume");
-  const parJour = document.getElementById("par-jour");
-  const champMois = document.getElementById("mois");
+    const auth = getAuth(app);
 
-  let toutesLesDepenses = [];
+    // Collection des dépenses : un document par dépense
+    const depensesRef = collection(db, "depenses");
 
-  // Par défaut, le sélecteur affiche le mois en cours (format "AAAA-MM")
-  champMois.value = dateDuJour().slice(0, 7);
-  // Quand on change de mois, on réaffiche tout
-  champMois.addEventListener("change", afficherTout);
+    // ======================================================================
+    // 1) ÉLÉMENTS DE LA PAGE (récupérés une fois pour toutes grâce à leur id)
+    // ======================================================================
+    const ecranConnexion = document.getElementById("ecran-connexion");
+    const ecranAppli = document.getElementById("ecran-appli");
+    const formConnexion = document.getElementById("form-connexion");
+    const erreurConnexion = document.getElementById("erreur-connexion");
+    const nomUtilisateur = document.getElementById("nom-utilisateur");
+    const btnDeconnexion = document.getElementById("btn-deconnexion");
 
-  // Renvoie le mois choisi ; si le champ est vidé, on retombe sur le mois en cours
-  function moisAffiche() {
-    return champMois.value || dateDuJour().slice(0, 7);
-  }
+    const formulaire = document.getElementById("form-depense");
+    const selectCategorie = document.getElementById("categorie");
+    const btnValider = document.getElementById("btn-valider");
+    const btnAnnuler = document.getElementById("btn-annuler");
 
-  // Appelle les trois affichages d'un coup
-    function afficherTout() {
-    majSeuils();          // NOUVEAU : choisit les seuils du mois affiché
-    afficherListe();
-    afficherResume();
-    afficherParJour();
-  }
+    const champMois = document.getElementById("mois");
+    const resume = document.getElementById("resume");
+    const graphRepartition = document.getElementById("graph-repartition");
+    const graphEvolution = document.getElementById("graph-evolution");
+    const comparaison = document.getElementById("comparaison");
+    const parJour = document.getElementById("par-jour");
+    const liste = document.getElementById("liste");
 
-  // 1) La liste des dépenses du mois choisi
-    function afficherListe() {
-    liste.innerHTML = "";
-    const mois = moisAffiche();
-    for (const d of toutesLesDepenses) {
-      if (!d.date.startsWith(mois)) continue;
+    const formSeuils = document.getElementById("form-seuils");
+    const champsSeuils = document.getElementById("champs-seuils");
+    const infoSeuils = document.getElementById("info-seuils");
+    const listeCategories = document.getElementById("liste-categories");
+    const formCategorie = document.getElementById("form-categorie");
 
-      const li = document.createElement("li");
+    // ======================================================================
+    // 2) OUTILS : dates, montants, mois
+    // ======================================================================
 
-      const texte = document.createElement("span");
-      texte.textContent = d.date + " – " + d.categorie + " : " +
-                          d.montant.toFixed(2) + " €" +
-                          (d.note ? " (" + d.note + ")" : "") +
-                          (d.saisiPar ? " – par " + d.saisiPar : "");
-      li.appendChild(texte);
-      li.appendChild(document.createElement("br"));   // retour à la ligne avant les boutons
-
-      // Bouton Modifier : charge la dépense "d" dans le formulaire
-      const btnModifier = document.createElement("button");
-      btnModifier.textContent = "Modifier";
-      btnModifier.addEventListener("click", function () { commencerEdition(d); });
-      li.appendChild(btnModifier);
-
-      // Bouton Supprimer : demande confirmation, puis supprime via l'id
-      const btnSupprimer = document.createElement("button");
-      btnSupprimer.textContent = "Supprimer";
-      btnSupprimer.addEventListener("click", function () {
-        if (!confirm("Supprimer cette dépense ?")) return;
-        deleteDoc(doc(db, "depenses", d.id))
-          .catch(function (erreur) { alert("Erreur de suppression : " + erreur.message); });
-      });
-      li.appendChild(btnSupprimer);
-
-      liste.appendChild(li);
+    // Date du jour au format AAAA-MM-JJ ("sv-SE" : la Suède écrit ses dates ainsi)
+    function dateDuJour() {
+      return new Date().toLocaleDateString("sv-SE");
     }
-  }
-  // 2) Le résumé par catégorie (comme avant, mais pour le mois choisi)
-  function afficherResume() {
-    const mois = moisAffiche();
-    resume.innerHTML = "";
 
-    for (const nom of CATEGORIES) {
-      let total = 0;
+    // Mois choisi dans le sélecteur ("AAAA-MM") ; si le champ est vidé : mois en cours
+    function moisAffiche() {
+      return champMois.value || dateDuJour().slice(0, 7);
+    }
+
+    // "2026-01" -> "2025-12"
+    function moisPrecedent(mois) {
+      let [annee, m] = mois.split("-").map(Number);
+      m -= 1;
+      if (m === 0) { m = 12; annee -= 1; }
+      return annee + "-" + String(m).padStart(2, "0");
+    }
+
+    // Nombre de jours d'un mois (le jour 0 du mois suivant est le dernier jour de celui-ci)
+    function nombreDeJours(mois) {
+      const [annee, m] = mois.split("-").map(Number);
+      return new Date(annee, m, 0).getDate();
+    }
+
+    // 12.5 -> "12,50 €"
+    function formatEuro(x) {
+      return x.toFixed(2).replace(".", ",") + " €";
+    }
+
+    // "2026-10-12" -> "12/10/2026"
+    function formatDate(iso) {
+      const [annee, m, jour] = iso.split("-");
+      return jour + "/" + m + "/" + annee;
+    }
+
+    // "2026-10" -> "octobre 2026" (ou autre format si on passe des options)
+    function libelleMois(mois, options) {
+      const [annee, m] = mois.split("-").map(Number);
+      return new Date(annee, m - 1, 1).toLocaleDateString("fr-FR", options || { month: "long", year: "numeric" });
+    }
+
+    // Nom court affiché = ce qui est avant le "@" de l'e-mail
+    function nomCourt(utilisateur) {
+      return utilisateur.email.split("@")[0];
+    }
+
+    // ======================================================================
+    // 3) ÉTAT DE L'APPLICATION : les données reçues de Firebase
+    // ======================================================================
+    let toutesLesDepenses = [];   // toutes les dépenses (tous mois)
+    let tousLesSeuils = {};       // { "2026-10": { idCategorie: seuil, ... }, ... }
+    let seuils = {};              // seuils du mois affiché
+    let depenseEnEdition = null;  // id de la dépense en cours de modification (null = aucune)
+
+    let arreterEcoute = null;             // fonctions pour arrêter l'écoute en temps réel
+    let arreterEcouteSeuils = null;
+    let arreterEcouteCategories = null;
+
+    // ======================================================================
+    // 4) CATÉGORIES PERSONNALISABLES
+    // Chaque catégorie : un id stable, un nom affiché, un indicateur "archivée".
+    // Les dépenses et les seuils sont rattachés à l'id : renommer une catégorie
+    // ne touche donc à aucune ancienne dépense.
+    // ======================================================================
+    const CATEGORIES_PAR_DEFAUT = [
+      { id: "Alimentaire générale", nom: "Alimentaire générale", archivee: false },
+      { id: "Restaurant", nom: "Restaurant", archivee: false },
+      { id: "Vêtements", nom: "Vêtements", archivee: false },
+      { id: "Divers", nom: "Divers", archivee: false }
+    ];
+    // Un seul document "reglages/categories" contient toute la liste
+    const categoriesRef = doc(db, "reglages", "categories");
+    let categories = CATEGORIES_PAR_DEFAUT;   // tant que rien n'est enregistré
+
+    // Nom affiché d'une catégorie à partir de son id
+    function nomCategorie(id) {
+      const cat = categories.find(function (c) { return c.id === id; });
+      return cat ? cat.nom : id;
+    }
+
+    // Vrai si un nom est déjà pris (sans tenir compte des majuscules)
+    function nomExiste(nom, idIgnore) {
+      return categories.some(function (c) {
+        return c.id !== idIgnore && c.nom.toLowerCase() === nom.toLowerCase();
+      });
+    }
+
+    // Écrit la nouvelle liste de catégories dans Firestore
+    function enregistrerCategories(nouvelleListe) {
+      setDoc(categoriesRef, { liste: nouvelleListe })
+        .catch(function (erreur) { alert("Erreur : " + erreur.message); });
+    }
+
+    // Reconstruit la liste déroulante du formulaire (catégories actives seulement)
+    function remplirSelect() {
+      const valeur = selectCategorie.value;      // on retient le choix en cours
+      selectCategorie.innerHTML = "";
+      for (const cat of categories) {
+        if (cat.archivee) continue;
+        selectCategorie.add(new Option(cat.nom, cat.id));   // Option(texte affiché, valeur)
+      }
+      const existe = Array.from(selectCategorie.options).some(function (o) { return o.value === valeur; });
+      if (existe) selectCategorie.value = valeur;
+    }
+
+    // Reconstruit les champs de seuils (un par catégorie active)
+    function construireChampsSeuils() {
+      champsSeuils.innerHTML = "";
+      for (const cat of categories) {
+        if (cat.archivee) continue;
+        const etiquette = document.createElement("label");
+        etiquette.textContent = cat.nom;
+
+        const champ = document.createElement("input");
+        champ.type = "number";
+        champ.min = "0";
+        champ.setAttribute("inputmode", "decimal");
+        champ.dataset.categorie = cat.id;       // le seuil est rattaché à l'id
+
+        champsSeuils.appendChild(etiquette);
+        champsSeuils.appendChild(champ);
+      }
+    }
+
+    // Affiche la liste de gestion des catégories, avec ses boutons
+    function afficherListeCategories() {
+      listeCategories.innerHTML = "";
+      for (const cat of categories) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-categorie";
+
+        const texte = document.createElement("strong");
+        texte.textContent = cat.nom + (cat.archivee ? " (archivée)" : "");
+        ligne.appendChild(texte);
+        ligne.appendChild(document.createElement("br"));
+
+        // Renommer : on ne change que le nom affiché, pas l'id
+        const btnRenommer = document.createElement("button");
+        btnRenommer.textContent = "Renommer";
+        btnRenommer.className = "petit secondaire";
+        btnRenommer.addEventListener("click", function () {
+          // prompt() ouvre une petite boîte de saisie
+          const nouveauNom = (prompt("Nouveau nom :", cat.nom) || "").trim();
+          if (nouveauNom === "" || nouveauNom === cat.nom) return;
+          if (nomExiste(nouveauNom, cat.id)) { alert("Ce nom existe déjà."); return; }
+          enregistrerCategories(categories.map(function (c) {
+            // "{ ...c, nom: nouveauNom }" : copie de c avec le nom modifié
+            return c.id === cat.id ? { ...c, nom: nouveauNom } : c;
+          }));
+        });
+        ligne.appendChild(btnRenommer);
+
+        // Archiver / Restaurer : l'historique reste intact
+        const btnArchiver = document.createElement("button");
+        btnArchiver.textContent = cat.archivee ? "Restaurer" : "Archiver";
+        btnArchiver.className = "petit secondaire";
+        btnArchiver.addEventListener("click", function () {
+          const actives = categories.filter(function (c) { return !c.archivee; });
+          if (!cat.archivee && actives.length <= 1) {
+            alert("Il faut garder au moins une catégorie active.");
+            return;
+          }
+          enregistrerCategories(categories.map(function (c) {
+            return c.id === cat.id ? { ...c, archivee: !c.archivee } : c;
+          }));
+        });
+        ligne.appendChild(btnArchiver);
+
+        listeCategories.appendChild(ligne);
+      }
+    }
+
+    // Met à jour tout ce qui dépend de la liste des catégories
+    function majCategories() {
+      remplirSelect();
+      construireChampsSeuils();
+      afficherListeCategories();
+    }
+
+    // Ajout d'une catégorie
+    formCategorie.addEventListener("submit", function (event) {
+      event.preventDefault();
+      const champ = document.getElementById("nouvelle-categorie");
+      const nom = champ.value.trim();
+      if (nom === "") return;
+      if (nomExiste(nom, null)) { alert("Cette catégorie existe déjà."); return; }
+
+      // Date.now() donne un nombre unique (l'heure en millisecondes) : on s'en sert pour fabriquer un id
+      const nouvelle = { id: "cat-" + Date.now(), nom: nom, archivee: false };
+      enregistrerCategories(categories.concat([nouvelle]));
+      champ.value = "";
+    });
+
+    // Écoute en temps réel de la liste des catégories
+    function demarrerEcouteCategories() {
+      arreterEcouteCategories = onSnapshot(
+        categoriesRef,
+        function (snapshot) {
+          categories = snapshot.exists() ? snapshot.data().liste : CATEGORIES_PAR_DEFAUT;
+          majCategories();
+          afficherTout();
+        },
+        function (erreur) { console.error("Erreur (catégories) :", erreur); }
+      );
+    }
+
+    // ======================================================================
+    // 5) SEUILS PAR MOIS
+    // Un document par mois dans la collection "seuils" ; son identifiant est le mois.
+    // ======================================================================
+
+    // Trouve les seuils à utiliser pour un mois donné
+    function seuilsEffectifs(mois) {
+      // Cas 1 : le mois a ses propres seuils
+      if (tousLesSeuils[mois]) {
+        return { valeurs: tousLesSeuils[mois], source: mois };
+      }
+      // Cas 2 : on cherche le mois PLUS ANCIEN le plus proche qui a des seuils.
+      // Comparer "2026-09" < "2026-10" fonctionne : l'ordre alphabétique suit l'ordre des dates.
+      const anterieurs = Object.keys(tousLesSeuils)
+        .filter(function (m) { return m < mois; })
+        .sort();
+      if (anterieurs.length > 0) {
+        const source = anterieurs[anterieurs.length - 1];
+        return { valeurs: tousLesSeuils[source], source: source };
+      }
+      // Cas 3 : rien du tout
+      return { valeurs: {}, source: null };
+    }
+
+    // Met à jour les seuils actifs, le texte d'information et les champs du formulaire
+    function majSeuils() {
+      const mois = moisAffiche();
+      const effectifs = seuilsEffectifs(mois);
+      seuils = effectifs.valeurs;
+
+      if (effectifs.source === mois) {
+        infoSeuils.textContent = "Seuils enregistrés pour " + libelleMois(mois) + ".";
+      } else if (effectifs.source) {
+        infoSeuils.textContent = "Aucun seuil enregistré pour " + libelleMois(mois) + " : ceux de " +
+          libelleMois(effectifs.source) + " sont repris. Enregistre pour les fixer pour ce mois.";
+      } else {
+        infoSeuils.textContent = "Aucun seuil défini pour " + libelleMois(mois) + ".";
+      }
+
+      // On ne remplit pas les champs si quelqu'un est en train de les modifier
+      if (!formSeuils.contains(document.activeElement)) {
+        for (const champ of champsSeuils.querySelectorAll("input")) {
+          champ.value = seuils[champ.dataset.categorie] ?? "";
+        }
+      }
+    }
+
+    // Enregistrement : les seuils sont écrits dans le document du MOIS AFFICHÉ
+    formSeuils.addEventListener("submit", async function (event) {
+      event.preventDefault();
+
+      const nouveauxSeuils = {};
+      for (const champ of champsSeuils.querySelectorAll("input")) {
+        nouveauxSeuils[champ.dataset.categorie] = parseFloat(champ.value) || 0;
+      }
+
+      const mois = moisAffiche();
+      try {
+        // merge : on conserve le seuil d'une éventuelle catégorie archivée
+        await setDoc(doc(db, "seuils", mois), nouveauxSeuils, { merge: true });
+        alert("Seuils enregistrés pour " + libelleMois(mois) + ".");
+      } catch (erreur) {
+        alert("Erreur : " + erreur.message);
+      }
+    });
+
+    // Écoute en temps réel de TOUTE la collection des seuils (un document par mois)
+    function demarrerEcouteSeuils() {
+      arreterEcouteSeuils = onSnapshot(
+        collection(db, "seuils"),
+        function (snapshot) {
+          tousLesSeuils = {};
+          snapshot.forEach(function (ligneDoc) {
+            tousLesSeuils[ligneDoc.id] = ligneDoc.data();   // l'id du document = le mois
+          });
+          afficherTout();
+        },
+        function (erreur) { console.error("Erreur (seuils) :", erreur); }
+      );
+    }
+
+    // ======================================================================
+    // 6) CONNEXION ET DÉCONNEXION
+    // ======================================================================
+    formConnexion.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      erreurConnexion.textContent = "";
+      try {
+        await signInWithEmailAndPassword(
+          auth,
+          document.getElementById("email").value,
+          document.getElementById("mdp").value
+        );
+        formConnexion.reset();   // on efface le mot de passe saisi
+      } catch (erreur) {
+        erreurConnexion.textContent = "E-mail ou mot de passe incorrect.";
+      }
+    });
+
+    btnDeconnexion.addEventListener("click", function () {
+      signOut(auth);
+    });
+
+    // ======================================================================
+    // 7) SAISIE, MODIFICATION ET SUPPRESSION D'UNE DÉPENSE
+    // ======================================================================
+    document.getElementById("date").value = dateDuJour();
+
+    // Charge une dépense dans le formulaire pour la modifier
+    function commencerEdition(d) {
+      depenseEnEdition = d.id;
+      // Si la catégorie est archivée, elle n'est plus dans la liste : on l'y ajoute le temps de la modification
+      const existe = Array.from(selectCategorie.options).some(function (o) { return o.value === d.categorie; });
+      if (!existe) selectCategorie.add(new Option(nomCategorie(d.categorie) + " (archivée)", d.categorie));
+      selectCategorie.value = d.categorie;
+      document.getElementById("date").value = d.date;
+      document.getElementById("montant").value = d.montant;
+      document.getElementById("note").value = d.note || "";
+      btnValider.textContent = "Enregistrer la modification";
+      btnAnnuler.hidden = false;
+      formulaire.scrollIntoView({ behavior: "smooth" });   // remonte vers le formulaire
+    }
+
+    // Remet le formulaire en mode "ajout"
+    function terminerEdition() {
+      depenseEnEdition = null;
+      formulaire.reset();
+      remplirSelect();     // retire une éventuelle catégorie archivée ajoutée pour la modification
+      document.getElementById("date").value = dateDuJour();
+      btnValider.textContent = "Ajouter la dépense";
+      btnAnnuler.hidden = true;
+    }
+
+    btnAnnuler.addEventListener("click", terminerEdition);
+
+    // Envoi du formulaire : ajout OU modification
+    formulaire.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      const depense = {
+        categorie: selectCategorie.value,
+        date: document.getElementById("date").value,
+        montant: parseFloat(document.getElementById("montant").value),
+        note: document.getElementById("note").value
+      };
+
+      if (isNaN(depense.montant) || depense.montant <= 0) {
+        alert("Entre un montant valide.");
+        return;
+      }
+      if (!depense.categorie || !depense.date) {
+        alert("Choisis une catégorie et une date.");
+        return;
+      }
+
+      // Pas de "await" : on n'attend pas la confirmation du serveur.
+      // Hors ligne, la dépense apparaît tout de suite et sera envoyée au retour du réseau.
+      if (depenseEnEdition) {
+        updateDoc(doc(db, "depenses", depenseEnEdition), depense)
+          .catch(function (erreur) { alert("Erreur de modification : " + erreur.message); });
+      } else {
+        depense.saisiPar = nomCourt(auth.currentUser);   // qui a saisi la dépense
+        addDoc(depensesRef, depense)
+          .catch(function (erreur) { alert("Erreur d'enregistrement : " + erreur.message); });
+      }
+      terminerEdition();
+    });
+
+    // Écoute en temps réel des dépenses (la plus récente d'abord)
+    function demarrerEcoute() {
+      const requete = query(depensesRef, orderBy("date", "desc"));
+      arreterEcoute = onSnapshot(
+        requete,
+        function (snapshot) {
+          toutesLesDepenses = [];
+          snapshot.forEach(function (ligneDoc) {
+            // "...ligneDoc.data()" recopie tous les champs ; on y ajoute l'identifiant (id)
+            toutesLesDepenses.push({ id: ligneDoc.id, ...ligneDoc.data() });
+          });
+          afficherTout();
+        },
+        function (erreur) { console.error("Erreur de lecture :", erreur); }
+      );
+    }
+
+    // ======================================================================
+    // 8) CALCULS COMMUNS
+    // ======================================================================
+
+    // Total dépensé par catégorie pour un mois : { idCategorie: total }
+    // jourMax (facultatif) : on ne compte que les dépenses du 1er au jour "jourMax"
+    function totauxParCategorie(mois, jourMax) {
+      const totaux = {};
       for (const d of toutesLesDepenses) {
-        if (d.categorie === nom && d.date.startsWith(mois)) {
-          total += d.montant;
+        if (!d.date.startsWith(mois)) continue;
+        if (jourMax && Number(d.date.slice(8, 10)) > jourMax) continue;
+        totaux[d.categorie] = (totaux[d.categorie] || 0) + d.montant;
+      }
+      return totaux;
+    }
+
+    // Catégories à montrer pour un mois : les actives, plus les archivées qui ont des dépenses
+    function categoriesDuMois(totaux) {
+      const visibles = categories.filter(function (cat) {
+        return !cat.archivee || (totaux[cat.id] || 0) > 0;
+      });
+      // Dépenses rattachées à une catégorie inconnue (ne devrait pas arriver) : affichées quand même
+      for (const id in totaux) {
+        if (!categories.some(function (c) { return c.id === id; })) {
+          visibles.push({ id: id, nom: id, archivee: false });
+        }
+      }
+      return visibles;
+    }
+
+    // Une barre de progression (verte, orange dès 80 %, rouge dès 100 %)
+    function creerBarre(pourcentage) {
+      const barre = document.createElement("div");
+      barre.className = "barre";
+      const remplissage = document.createElement("div");
+      remplissage.className = "remplissage";
+      if (pourcentage >= 100) remplissage.classList.add("rouge");
+      else if (pourcentage >= 80) remplissage.classList.add("orange");
+      remplissage.style.width = Math.min(pourcentage, 100) + "%";   // jamais plus de 100 % de largeur
+      barre.appendChild(remplissage);
+      return barre;
+    }
+
+    // Fabrique un élément SVG avec ses attributs (pour dessiner les graphiques)
+    const NS_SVG = "http://www.w3.org/2000/svg";
+    function elementSvg(nom, attributs) {
+      const el = document.createElementNS(NS_SVG, nom);
+      for (const cle in attributs) el.setAttribute(cle, attributs[cle]);
+      return el;
+    }
+
+    // ======================================================================
+    // 9) AFFICHAGES
+    // ======================================================================
+
+    // Appelle tous les affichages d'un coup (à chaque changement de données ou de mois)
+    function afficherTout() {
+      majSeuils();
+      afficherListe();
+      afficherResume();
+      afficherRepartition();
+      afficherEvolution();
+      afficherComparaison();
+      afficherParJour();
+    }
+    champMois.value = dateDuJour().slice(0, 7);          // par défaut : le mois en cours
+    champMois.addEventListener("change", afficherTout);  // changer de mois réaffiche tout
+
+    // ---- Résumé du mois : total général puis une ligne par catégorie ----
+    function afficherResume() {
+      const mois = moisAffiche();
+      const totaux = totauxParCategorie(mois);
+      const visibles = categoriesDuMois(totaux);
+      resume.innerHTML = "";
+
+      let totalMois = 0;
+      let budget = 0;
+      for (const cat of visibles) {
+        totalMois += totaux[cat.id] || 0;
+        budget += seuils[cat.id] || 0;
+      }
+
+      // En-tête : le total du mois en grand
+      const hero = document.createElement("div");
+      hero.className = "hero";
+      const gros = document.createElement("div");
+      gros.className = "gros";
+      gros.textContent = formatEuro(totalMois);
+      hero.appendChild(gros);
+
+      const sous = document.createElement("div");
+      sous.className = "sous";
+      if (budget > 0) {
+        const reste = budget - totalMois;
+        sous.textContent = "dépensés sur " + formatEuro(budget) + " – " +
+          (reste >= 0 ? "il reste " + formatEuro(reste) : "dépassement de " + formatEuro(-reste));
+      } else {
+        sous.textContent = "dépensés en " + libelleMois(mois) + " (aucun seuil défini)";
+      }
+      hero.appendChild(sous);
+      if (budget > 0) hero.appendChild(creerBarre((totalMois / budget) * 100));
+      resume.appendChild(hero);
+
+      // Une ligne par catégorie
+      for (const cat of visibles) {
+        const total = totaux[cat.id] || 0;
+        const seuil = seuils[cat.id] || 0;
+        const reste = seuil - total;
+
+        const bloc = document.createElement("div");
+        bloc.className = "categorie";
+
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-cat";
+        const nom = document.createElement("strong");
+        nom.textContent = cat.nom + (cat.archivee ? " (archivée)" : "");
+        const montants = document.createElement("span");
+        montants.textContent = formatEuro(total) + " / " + formatEuro(seuil);
+        ligne.appendChild(nom);
+        ligne.appendChild(montants);
+        bloc.appendChild(ligne);
+
+        const detail = document.createElement("div");
+        detail.className = "detail-cat";
+        if (seuil === 0) detail.textContent = "Seuil non défini";
+        else if (reste >= 0) detail.textContent = "Reste : " + formatEuro(reste);
+        else detail.textContent = "Dépassement de " + formatEuro(-reste);
+        bloc.appendChild(detail);
+
+        if (seuil > 0) bloc.appendChild(creerBarre((total / seuil) * 100));
+        resume.appendChild(bloc);
+      }
+    }
+
+    // ---- Graphique A1 : répartition par catégorie (anneau) ----
+    const COULEURS = ["#2468c9", "#1f9d55", "#e08a00", "#8e44ad", "#c8372d", "#16a085", "#d35400", "#34495e"];
+
+    function afficherRepartition() {
+      graphRepartition.innerHTML = "";
+      const totaux = totauxParCategorie(moisAffiche());
+
+      // On ne garde que les catégories qui ont des dépenses
+      const parts = [];
+      let totalMois = 0;
+      for (const cat of categoriesDuMois(totaux)) {
+        const total = totaux[cat.id] || 0;
+        if (total > 0) {
+          parts.push({ nom: cat.nom, total: total });
+          totalMois += total;
         }
       }
 
-      const seuil = seuils[nom] || 0;
-      const reste = seuil - total;
-      const pourcentage = seuil > 0 ? (total / seuil) * 100 : 0;
+      if (totalMois === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucune dépense ce mois-ci.";
+        graphRepartition.appendChild(vide);
+        return;
+      }
 
-      const bloc = document.createElement("div");
-      bloc.className = "categorie";
+      // L'anneau est fait de cercles dont on ne montre qu'une partie du contour :
+      // "stroke-dasharray" = longueur visible, puis longueur cachée.
+      const svg = elementSvg("svg", { viewBox: "0 0 120 120", class: "donut" });
+      const rayon = 40;
+      const circonference = 2 * Math.PI * rayon;
+      let decalage = 0;   // où commence la part suivante
 
-      const titre = document.createElement("strong");
-      titre.textContent = nom + " : " + total.toFixed(2) + " € / " + seuil.toFixed(2) + " €";
-      bloc.appendChild(titre);
+      parts.forEach(function (part, i) {
+        const longueur = (part.total / totalMois) * circonference;
+        svg.appendChild(elementSvg("circle", {
+          cx: 60, cy: 60, r: rayon,
+          fill: "none",
+          stroke: COULEURS[i % COULEURS.length],
+          "stroke-width": 22,
+          "stroke-dasharray": longueur + " " + (circonference - longueur),
+          "stroke-dashoffset": -decalage,
+          transform: "rotate(-90 60 60)"      // on démarre en haut
+        }));
+        decalage += longueur;
+      });
 
-      const detail = document.createElement("div");
-      if (seuil === 0) {
-        detail.textContent = "Seuil non défini";
-      } else if (reste >= 0) {
-        detail.textContent = "Reste : " + reste.toFixed(2) + " €";
+      // Texte au centre
+      const titre = elementSvg("text", { x: 60, y: 56, "text-anchor": "middle", "font-size": 8, fill: "#66727f" });
+      titre.textContent = "Total";
+      const montant = elementSvg("text", { x: 60, y: 68, "text-anchor": "middle", "font-size": 9.5, "font-weight": 700, fill: "#1c2b3a" });
+      montant.textContent = formatEuro(totalMois);
+      svg.appendChild(titre);
+      svg.appendChild(montant);
+      graphRepartition.appendChild(svg);
+
+      // Légende : une ligne par catégorie
+      const legende = document.createElement("div");
+      legende.className = "legende";
+      parts.forEach(function (part, i) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-legende";
+
+        const pastille = document.createElement("span");
+        pastille.className = "pastille";
+        pastille.style.background = COULEURS[i % COULEURS.length];
+
+        const nom = document.createElement("span");
+        nom.textContent = part.nom;
+
+        const valeur = document.createElement("span");
+        valeur.className = "valeur";
+        valeur.textContent = formatEuro(part.total) + " (" + Math.round((part.total / totalMois) * 100) + " %)";
+
+        ligne.appendChild(pastille);
+        ligne.appendChild(nom);
+        ligne.appendChild(valeur);
+        legende.appendChild(ligne);
+      });
+      graphRepartition.appendChild(legende);
+    }
+
+    // ---- Graphique A2 : évolution cumulée des dépenses au fil du mois ----
+    function afficherEvolution() {
+      graphEvolution.innerHTML = "";
+      const mois = moisAffiche();
+      const nbJours = nombreDeJours(mois);
+      const aujourdhui = dateDuJour();
+
+      // On trace jusqu'à aujourd'hui pour le mois en cours, jusqu'à la fin du mois sinon
+      const dernierJour = (mois === aujourdhui.slice(0, 7)) ? Number(aujourdhui.slice(8, 10)) : nbJours;
+
+      // Total de chaque jour (tableau indexé par le numéro du jour, de 1 à nbJours)
+      const parJourTab = new Array(nbJours + 1).fill(0);
+      for (const d of toutesLesDepenses) {
+        if (!d.date.startsWith(mois)) continue;
+        parJourTab[Number(d.date.slice(8, 10))] += d.montant;
+      }
+
+      // Cumul : la dépense totale depuis le début du mois, jour après jour
+      const cumul = [];
+      let somme = 0;
+      for (let j = 1; j <= dernierJour; j++) {
+        somme += parJourTab[j];
+        cumul.push(somme);
+      }
+
+      if (somme === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucune dépense ce mois-ci.";
+        graphEvolution.appendChild(vide);
+        return;
+      }
+
+      // Budget total du mois = somme des seuils des catégories affichées
+      const totaux = totauxParCategorie(mois);
+      let budget = 0;
+      for (const cat of categoriesDuMois(totaux)) budget += seuils[cat.id] || 0;
+
+      // Dimensions du dessin et marges (en unités du dessin, pas en pixels)
+      const L = 320, H = 180;
+      const margeGauche = 40, margeDroite = 12, margeHaut = 14, margeBas = 26;
+      const ymax = Math.max(somme, budget) * 1.1;
+
+      // X(j) et Y(v) convertissent un jour et un montant en position dans le dessin
+      const X = function (j) {
+        return nbJours > 1 ? margeGauche + ((j - 1) / (nbJours - 1)) * (L - margeGauche - margeDroite) : margeGauche;
+      };
+      const Y = function (v) {
+        return margeHaut + (1 - v / ymax) * (H - margeHaut - margeBas);
+      };
+
+      const svg = elementSvg("svg", { viewBox: "0 0 " + L + " " + H, class: "graphique" });
+
+      // Axe horizontal
+      svg.appendChild(elementSvg("line", { x1: margeGauche, y1: Y(0), x2: L - margeDroite, y2: Y(0), stroke: "#cfd6de" }));
+
+      // Ligne pointillée : le budget total
+      if (budget > 0) {
+        svg.appendChild(elementSvg("line", {
+          x1: margeGauche, y1: Y(budget), x2: L - margeDroite, y2: Y(budget),
+          stroke: "#c8372d", "stroke-dasharray": "4 3"
+        }));
+        const etiquetteBudget = elementSvg("text", { x: L - margeDroite, y: Y(budget) - 4, "text-anchor": "end", "font-size": 9, fill: "#c8372d" });
+        etiquetteBudget.textContent = "Budget " + Math.round(budget) + " €";
+        svg.appendChild(etiquetteBudget);
+      }
+
+      // La courbe : une liste de points "x,y"
+      const points = cumul.map(function (v, i) { return X(i + 1) + "," + Y(v); }).join(" ");
+      svg.appendChild(elementSvg("polyline", {
+        points: points, fill: "none", stroke: "#2468c9", "stroke-width": 2.5, "stroke-linejoin": "round"
+      }));
+      svg.appendChild(elementSvg("circle", { cx: X(dernierJour), cy: Y(somme), r: 3.5, fill: "#2468c9" }));
+
+      // Montant atteint, au bout de la courbe
+      const etiquetteFin = elementSvg("text", {
+        x: X(dernierJour), y: Y(somme) - 8, "text-anchor": dernierJour > nbJours / 2 ? "end" : "start",
+        "font-size": 9.5, "font-weight": 700, fill: "#2468c9"
+      });
+      etiquetteFin.textContent = formatEuro(somme);
+      svg.appendChild(etiquetteFin);
+
+      // Graduations : 0 et maximum à gauche ; jours 1, milieu et fin en bas
+      const zero = elementSvg("text", { x: margeGauche - 6, y: Y(0) + 3, "text-anchor": "end", "font-size": 9, fill: "#66727f" });
+      zero.textContent = "0";
+      const haut = elementSvg("text", { x: margeGauche - 6, y: Y(ymax) + 3, "text-anchor": "end", "font-size": 9, fill: "#66727f" });
+      haut.textContent = Math.round(ymax) + " €";
+      svg.appendChild(zero);
+      svg.appendChild(haut);
+
+      const joursAffiches = [1, Math.round((nbJours + 1) / 2), nbJours];
+      for (const j of joursAffiches) {
+        const t = elementSvg("text", { x: X(j), y: H - 8, "text-anchor": "middle", "font-size": 9, fill: "#66727f" });
+        t.textContent = j;
+        svg.appendChild(t);
+      }
+      graphEvolution.appendChild(svg);
+    }
+
+    // ---- Comparaison B : le mois affiché contre le mois précédent ----
+    function afficherComparaison() {
+      comparaison.innerHTML = "";
+      const mois = moisAffiche();
+      const precedent = moisPrecedent(mois);
+      const aujourdhui = dateDuJour();
+
+      // Pour le mois en cours, on compare "à date égale" : du 1er au jour d'aujourd'hui,
+      // sinon on comparerait un mois incomplet à un mois entier.
+      const enCours = (mois === aujourdhui.slice(0, 7));
+      const jourLimite = enCours ? Number(aujourdhui.slice(8, 10)) : 0;   // 0 = pas de limite
+
+      const actuel = totauxParCategorie(mois);
+      const avant = totauxParCategorie(precedent, jourLimite);
+
+      // Les lignes du tableau : catégories (actives ou non) ayant des dépenses dans l'un des deux mois
+      const lignes = [];
+      for (const cat of categories) {
+        if ((actuel[cat.id] || 0) > 0 || (avant[cat.id] || 0) > 0) {
+          lignes.push({ nom: cat.nom, actuel: actuel[cat.id] || 0, avant: avant[cat.id] || 0 });
+        }
+      }
+      // Catégories inconnues (ne devrait pas arriver)
+      const ids = Object.keys(actuel).concat(Object.keys(avant));
+      for (const id of ids) {
+        if (!categories.some(function (c) { return c.id === id; }) && !lignes.some(function (l) { return l.nom === id; })) {
+          lignes.push({ nom: id, actuel: actuel[id] || 0, avant: avant[id] || 0 });
+        }
+      }
+
+      if (lignes.length === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucune dépense à comparer.";
+        comparaison.appendChild(vide);
+        return;
+      }
+
+      // Texte de l'écart : "+12,00 € (+8 %)"
+      function texteEcart(avantVal, actuelVal) {
+        const ecart = actuelVal - avantVal;
+        let texte = (ecart > 0 ? "+" : "") + formatEuro(ecart);
+        if (avantVal > 0) {
+          const pct = Math.round((ecart / avantVal) * 100);
+          texte += " (" + (pct > 0 ? "+" : "") + pct + " %)";
+        }
+        return texte;
+      }
+
+      const court = { month: "short", year: "2-digit" };   // ex. "oct. 26"
+      const tableau = document.createElement("table");
+      tableau.className = "tableau";
+
+      // En-tête
+      const entete = document.createElement("tr");
+      for (const titre of ["Catégorie", libelleMois(precedent, court), libelleMois(mois, court), "Écart"]) {
+        const th = document.createElement("th");
+        th.textContent = titre;
+        entete.appendChild(th);
+      }
+      tableau.appendChild(entete);
+
+      // Une ligne par catégorie, puis le total
+      let totalAvant = 0;
+      let totalActuel = 0;
+      function ajouterLigne(nom, avantVal, actuelVal, estTotal) {
+        const tr = document.createElement("tr");
+        if (estTotal) tr.className = "total";
+
+        const cellules = [nom, formatEuro(avantVal), formatEuro(actuelVal), texteEcart(avantVal, actuelVal)];
+        cellules.forEach(function (texte, i) {
+          const td = document.createElement("td");
+          td.textContent = texte;
+          if (i === 3 && actuelVal !== avantVal) {
+            // Dépenser plus = hausse (rouge) ; dépenser moins = baisse (vert)
+            td.className = actuelVal > avantVal ? "hausse" : "baisse";
+          }
+          tr.appendChild(td);
+        });
+        tableau.appendChild(tr);
+      }
+      for (const l of lignes) {
+        ajouterLigne(l.nom, l.avant, l.actuel, false);
+        totalAvant += l.avant;
+        totalActuel += l.actuel;
+      }
+      ajouterLigne("Total", totalAvant, totalActuel, true);
+
+      const defilement = document.createElement("div");
+      defilement.className = "defilement";
+      defilement.appendChild(tableau);
+      comparaison.appendChild(defilement);
+
+      if (enCours) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = "Mois en cours : comparaison à date égale (du 1er au " + jourLimite + " de chaque mois).";
+        comparaison.appendChild(note);
+      }
+    }
+
+    // ---- Total de chaque jour du mois ----
+    function afficherParJour() {
+      parJour.innerHTML = "";
+      const mois = moisAffiche();
+
+      // totaux associe chaque jour à son total : { "2026-10-12": 34.5, ... }
+      const totaux = {};
+      for (const d of toutesLesDepenses) {
+        if (!d.date.startsWith(mois)) continue;
+        totaux[d.date] = (totaux[d.date] || 0) + d.montant;
+      }
+
+      // Les jours, du plus récent au plus ancien
+      const jours = Object.keys(totaux).sort().reverse();
+      if (jours.length === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucune dépense ce mois-ci.";
+        parJour.appendChild(vide);
+        return;
+      }
+
+      for (const jour of jours) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-jour";
+        const date = document.createElement("span");
+        date.textContent = formatDate(jour);
+        const montant = document.createElement("strong");
+        montant.textContent = formatEuro(totaux[jour]);
+        ligne.appendChild(date);
+        ligne.appendChild(montant);
+        parJour.appendChild(ligne);
+      }
+    }
+
+    // ---- Liste des dépenses du mois, avec boutons Modifier / Supprimer ----
+    function afficherListe() {
+      liste.innerHTML = "";
+      const mois = moisAffiche();
+      let nombre = 0;
+
+      for (const d of toutesLesDepenses) {
+        // "continue" : cette dépense est d'un autre mois, on passe à la suivante
+        if (!d.date.startsWith(mois)) continue;
+        nombre++;
+
+        const li = document.createElement("li");
+
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-depense";
+        const gauche = document.createElement("span");
+        gauche.textContent = formatDate(d.date) + " – " + nomCategorie(d.categorie);
+        const montant = document.createElement("strong");
+        montant.textContent = formatEuro(d.montant);
+        ligne.appendChild(gauche);
+        ligne.appendChild(montant);
+        li.appendChild(ligne);
+
+        // Note et auteur, s'il y en a
+        const infos = [];
+        if (d.note) infos.push(d.note);
+        if (d.saisiPar) infos.push("par " + d.saisiPar);
+        if (infos.length > 0) {
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = infos.join(" – ");
+          li.appendChild(meta);
+        }
+
+        // Modifier : charge la dépense "d" dans le formulaire
+        const btnModifier = document.createElement("button");
+        btnModifier.textContent = "Modifier";
+        btnModifier.className = "petit secondaire";
+        btnModifier.addEventListener("click", function () { commencerEdition(d); });
+        li.appendChild(btnModifier);
+
+        // Supprimer : demande confirmation, puis supprime via l'id
+        const btnSupprimer = document.createElement("button");
+        btnSupprimer.textContent = "Supprimer";
+        btnSupprimer.className = "petit danger";
+        btnSupprimer.addEventListener("click", function () {
+          if (!confirm("Supprimer cette dépense ?")) return;
+          deleteDoc(doc(db, "depenses", d.id))
+            .catch(function (erreur) { alert("Erreur de suppression : " + erreur.message); });
+        });
+        li.appendChild(btnSupprimer);
+
+        liste.appendChild(li);
+      }
+
+      if (nombre === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucune dépense ce mois-ci.";
+        liste.appendChild(vide);
+      }
+    }
+
+    // ======================================================================
+    // 10) EXPORT CSV (toutes les dépenses, tous les mois)
+    // ======================================================================
+
+    // Met un texte entre guillemets (et double les guillemets internes) pour ne pas casser le CSV
+    function entreGuillemets(texte) {
+      return '"' + String(texte).replace(/"/g, '""') + '"';
+    }
+
+    document.getElementById("btn-export").addEventListener("click", function () {
+      // Séparateur ";" et virgule décimale : c'est ce qu'attend Excel en version française
+      const lignes = ["date;categorie;montant;note;saisi_par"];
+      for (const d of toutesLesDepenses) {
+        lignes.push([
+          d.date,
+          entreGuillemets(nomCategorie(d.categorie)),
+          String(d.montant).replace(".", ","),
+          entreGuillemets(d.note || ""),
+          entreGuillemets(d.saisiPar || "")
+        ].join(";"));
+      }
+
+      // "\uFEFF" au début : indique à Excel que le fichier est en UTF-8 (pour les accents)
+      const contenu = "\uFEFF" + lignes.join("\r\n");
+      const fichier = new Blob([contenu], { type: "text/csv;charset=utf-8" });
+
+      // On fabrique un lien de téléchargement invisible et on clique dessus
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(fichier);
+      lien.download = "depenses.csv";
+      lien.click();
+      setTimeout(function () { URL.revokeObjectURL(lien.href); }, 1000);
+    });
+
+    // ======================================================================
+    // 11) DÉMARRAGE : surveiller l'état de connexion
+    // ======================================================================
+    majCategories();   // on remplit déjà la liste avec les catégories par défaut
+
+    // Cette fonction s'exécute au chargement, puis à chaque connexion / déconnexion.
+    // "user" contient le compte si on est connecté, sinon "null".
+    onAuthStateChanged(auth, function (user) {
+      if (user) {
+        ecranConnexion.hidden = true;
+        ecranAppli.hidden = false;
+        nomUtilisateur.textContent = nomCourt(user);
+        demarrerEcoute();
+        demarrerEcouteSeuils();
+        demarrerEcouteCategories();
       } else {
-        detail.textContent = "Dépassement de " + (-reste).toFixed(2) + " €";
+        ecranConnexion.hidden = false;
+        ecranAppli.hidden = true;
+        if (arreterEcoute) { arreterEcoute(); arreterEcoute = null; }
+        if (arreterEcouteSeuils) { arreterEcouteSeuils(); arreterEcouteSeuils = null; }
+        if (arreterEcouteCategories) { arreterEcouteCategories(); arreterEcouteCategories = null; }
+        liste.innerHTML = "";
       }
-      bloc.appendChild(detail);
+    });
 
-      if (seuil > 0) {
-        const barre = document.createElement("div");
-        barre.className = "barre";
-        const remplissage = document.createElement("div");
-        remplissage.className = "remplissage";
-        if (pourcentage >= 100) remplissage.classList.add("rouge");
-        else if (pourcentage >= 80) remplissage.classList.add("orange");
-        remplissage.style.width = Math.min(pourcentage, 100) + "%";
-        barre.appendChild(remplissage);
-        bloc.appendChild(barre);
-      }
-
-      resume.appendChild(bloc);
+    // Enregistre le "service worker" (fichier sw.js) qui permet d'ouvrir l'appli hors ligne
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js");
     }
-  }
-
-  // 3) NOUVEAU : le total de chaque jour du mois choisi
-  function afficherParJour() {
-    parJour.innerHTML = "";
-    const mois = moisAffiche();
-
-    // totaux est un objet qui associe chaque jour à son total :
-    // { "2026-10-12": 34.5, "2026-10-13": 12, ... }
-    const totaux = {};
-    let totalMois = 0;
-    for (const d of toutesLesDepenses) {
-      if (!d.date.startsWith(mois)) continue;
-      // (totaux[d.date] || 0) : si le jour n'existe pas encore, on part de 0
-      totaux[d.date] = (totaux[d.date] || 0) + d.montant;
-      totalMois += d.montant;
-    }
-
-    // Object.keys donne la liste des jours ; on les trie du plus récent au plus ancien
-    const jours = Object.keys(totaux).sort().reverse();
-
-    if (jours.length === 0) {
-      parJour.textContent = "Aucune dépense ce mois-ci.";
-      return;
-    }
-
-    const total = document.createElement("strong");
-    total.textContent = "Total du mois : " + totalMois.toFixed(2) + " €";
-    parJour.appendChild(total);
-
-    for (const jour of jours) {
-      const ligne = document.createElement("div");
-      ligne.textContent = jour + " : " + totaux[jour].toFixed(2) + " €";
-      parJour.appendChild(ligne);
-    }
-  }
-
-    // --- EXPORT CSV (toutes les dépenses, tous les mois) ---
-  // Met un texte entre guillemets (et double les guillemets internes) pour ne pas casser le CSV
-  function entreGuillemets(texte) {
-    return '"' + String(texte).replace(/"/g, '""') + '"';
-  }
-
-  document.getElementById("btn-export").addEventListener("click", function () {
-    // Séparateur ";" et virgule décimale : c'est ce qu'attend Excel en version française
-    const lignes = ["date;categorie;montant;note;saisi_par"];
-    for (const d of toutesLesDepenses) {
-      lignes.push([
-        d.date,
-        entreGuillemets(d.categorie),
-        String(d.montant).replace(".", ","),
-        entreGuillemets(d.note || ""),
-        entreGuillemets(d.saisiPar || "")
-      ].join(";"));
-    }
-
-    // "\uFEFF" au début : indique à Excel que le fichier est en UTF-8 (pour les accents)
-    const contenu = "\uFEFF" + lignes.join("\r\n");
-    const fichier = new Blob([contenu], { type: "text/csv;charset=utf-8" });
-
-    // On fabrique un lien de téléchargement invisible et on clique dessus
-    const lien = document.createElement("a");
-    lien.href = URL.createObjectURL(fichier);
-    lien.download = "depenses.csv";
-    lien.click();
-    setTimeout(function () { URL.revokeObjectURL(lien.href); }, 1000);
-  });
-
-  // --- NOUVEAU : SURVEILLER L'ÉTAT DE CONNEXION ---
-  // Cette fonction s'exécute au chargement, puis à chaque connexion/déconnexion.
-  // "user" contient le compte si on est connecté, sinon "null".
-  onAuthStateChanged(auth, function (user) {
-  if (user) {
-    ecranConnexion.hidden = true;
-    ecranAppli.hidden = false;
-    nomUtilisateur.textContent = nomCourt(user);
-    demarrerEcoute();
-    demarrerEcouteSeuils();
-  } else {
-    ecranConnexion.hidden = false;
-    ecranAppli.hidden = true;
-    if (arreterEcoute) {              // arrêt de l'écoute des dépenses (à remettre)
-      arreterEcoute();
-      arreterEcoute = null;
-    }
-    if (arreterEcouteSeuils) {        // arrêt de l'écoute des seuils
-      arreterEcouteSeuils();
-      arreterEcouteSeuils = null;
-    }
-    liste.innerHTML = "";
-  }
-});
-        // Enregistre le "service worker" (fichier sw.js) qui permet d'ouvrir l'appli hors ligne
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js");
-  }
-</script>
-
-  
+  </script>
 </body>
 </html>
