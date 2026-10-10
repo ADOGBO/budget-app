@@ -27,6 +27,27 @@
       margin: 0 auto;
       padding: 16px;
     }
+            /* Les étiquettes au-dessus de chaque champ */
+        label {
+          display: block;          /* chaque étiquette sur sa propre ligne */
+          margin-top: 12px;
+          font-weight: bold;
+        }
+        /* Les champs et le bouton prennent toute la largeur */
+        select, input, button {
+          width: 100%;
+          box-sizing: border-box;  /* la bordure et le padding comptent dans la largeur */
+          padding: 10px;
+          margin-top: 4px;
+          font-size: 16px;         /* évite le zoom automatique sur iPhone */
+        }
+        button {
+          background: #2c7be5;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          margin-top: 16px;
+        }
   </style>
 </head>
 <body>
@@ -35,7 +56,32 @@
   </header>
 
   <main>
-    <p>Bientôt : le formulaire de saisie des dépenses.</p>
+    <!-- Le formulaire : chaque <label> décrit un champ, chaque <input>/<select> est le champ lui-même -->
+    <form id="form-depense">
+    
+      <label for="categorie">Catégorie</label>
+      <!-- <select> = liste déroulante -->
+      <select id="categorie">
+        <option>Alimentaire générale</option>
+        <option>Restaurant</option>
+        <option>Vêtements</option>
+        <option>Divers</option>
+      </select>
+    
+      <label for="date">Date</label>
+      <!-- type="date" affiche un calendrier sur téléphone -->
+      <input type="date" id="date">
+    
+      <label for="montant">Montant (€)</label>
+      <!-- type="number" affiche le clavier numérique ; step="0.01" autorise les centimes -->
+      <input type="number" id="montant" step="0.01" min="0">
+    
+      <label for="note">Note (facultatif)</label>
+      <input type="text" id="note">
+    
+      <button type="submit">Ajouter la dépense</button>
+    </form>
+    
   </main>
 </body>
 </html>
