@@ -85,8 +85,13 @@
 <main id="ecran-appli" hidden>
   <p>Connecté : <strong id="nom-utilisateur"></strong></p>
   <button id="btn-deconnexion">Se déconnecter</button>
-  <h2>Ce mois-ci</h2>
+  <label for="mois">Mois affiché</label>
+<!-- type="month" affiche un sélecteur de mois sur téléphone -->
+<input type="month" id="mois">
+<h2>Résumé du mois</h2>
   <div id="resume"></div>
+  <h2>Par jour</h2>
+<div id="par-jour"></div>
   
     <!-- Le formulaire : chaque <label> décrit un champ, chaque <input>/<select> est le champ lui-même -->
     <form id="form-depense">
@@ -115,13 +120,14 @@
     </form>
     <!-- <details> = bloc repliable, pratique sur mobile -->
         <details>
-          <summary>Seuils mensuels (€)</summary>
-          <form id="form-seuils">
-            <!-- Les champs sont créés par le script, un par catégorie -->
-            <div id="champs-seuils"></div>
-            <button type="submit">Enregistrer les seuils</button>
-          </form>
-        </details>
+  <summary>Seuils du mois affiché (€)</summary>
+  <form id="form-seuils">
+    <!-- Texte d'information : d'où viennent les seuils affichés -->
+    <p id="info-seuils"></p>
+    <div id="champs-seuils"></div>
+    <button type="submit">Enregistrer les seuils de ce mois</button>
+  </form>
+</details>
 
     <!-- Zone où s'affichera la liste des dépenses saisies -->
     <h2>Dépenses saisies</h2>
@@ -226,24 +232,18 @@
   // onSnapshot renvoie une fonction qui permet d'arrêter l'écoute : on la garde.
   let arreterEcoute = null;
 
-    function demarrerEcoute() {
+      function demarrerEcoute() {
     const requete = query(depensesRef, orderBy("date", "desc"));
     arreterEcoute = onSnapshot(
       requete,
       function (snapshot) {
-        liste.innerHTML = "";
-        toutesLesDepenses = [];                   // NOUVEAU : on repart d'une liste vide
+        toutesLesDepenses = [];
         snapshot.forEach(function (doc) {
-          const d = doc.data();
-          toutesLesDepenses.push(d);              // NOUVEAU : on mémorise la dépense
-          const li = document.createElement("li");
-          li.textContent = d.date + " – " + d.categorie + " : " +
-                           d.montant.toFixed(2) + " €" +
-                           (d.note ? " (" + d.note + ")" : "") +
-                           (d.saisiPar ? " – par " + d.saisiPar : "");
-          liste.appendChild(li);
+          // "...doc.data()" recopie tous les champs de la dépense ;
+          // on y ajoute son identifiant (id), dont on aura besoin à l'étape 8
+          toutesLesDepenses.push({ id: doc.id, ...doc.data() });
         });
-        afficherResume();                         // NOUVEAU : on recalcule les barres
+        afficherTout();                 // liste + résumé + vue par jour
       },
       function (erreur) {
         console.error("Erreur de lecture :", erreur);
@@ -251,17 +251,17 @@
     );
   }
 
-    // --- NOUVEAU : SEUILS ---
-  // La liste des catégories, à un seul endroit (pratique si on en ajoute plus tard)
+      // --- SEUILS PAR MOIS ---
   const CATEGORIES = ["Alimentaire générale", "Restaurant", "Vêtements", "Divers"];
 
-  // doc() désigne UN document précis : collection "reglages", document "seuils"
-  const seuilsRef = doc(db, "reglages", "seuils");
+  // Une collection "seuils" : un document par mois, dont l'identifiant est le mois ("2026-10")
+  const seuilsCol = collection(db, "seuils");
 
   const champsSeuils = document.getElementById("champs-seuils");
   const formSeuils = document.getElementById("form-seuils");
+  const infoSeuils = document.getElementById("info-seuils");
 
-  // Une boucle crée un champ (avec son étiquette) pour chaque catégorie
+  // Un champ numérique par catégorie
   for (const nom of CATEGORIES) {
     const etiquette = document.createElement("label");
     etiquette.textContent = nom;
@@ -269,70 +269,147 @@
     const champ = document.createElement("input");
     champ.type = "number";
     champ.min = "0";
-    champ.dataset.categorie = nom;   // on mémorise à quelle catégorie appartient le champ
+    champ.dataset.categorie = nom;
 
     champsSeuils.appendChild(etiquette);
     champsSeuils.appendChild(champ);
   }
 
-  // Enregistrement des seuils
+  // Enregistrement : les seuils sont écrits dans le document du MOIS AFFICHÉ
   formSeuils.addEventListener("submit", async function (event) {
     event.preventDefault();
 
-    // Un objet du type { "Restaurant": 100, "Divers": 50, ... }
     const nouveauxSeuils = {};
     for (const champ of champsSeuils.querySelectorAll("input")) {
-      // parseFloat(...) || 0 : si le champ est vide, on met 0
       nouveauxSeuils[champ.dataset.categorie] = parseFloat(champ.value) || 0;
     }
 
+    const mois = moisAffiche();
     try {
-      // setDoc écrit (ou remplace) le document "seuils"
-      await setDoc(seuilsRef, nouveauxSeuils);
-      alert("Seuils enregistrés.");
+      // doc(db, "seuils", mois) désigne le document de ce mois
+      await setDoc(doc(db, "seuils", mois), nouveauxSeuils);
+      alert("Seuils enregistrés pour " + mois + ".");
     } catch (erreur) {
       alert("Erreur : " + erreur.message);
     }
   });
 
-  // Lecture en temps réel des seuils (on s'en servira en 6b pour calculer le reste)
+  // tousLesSeuils contient tous les mois : { "2026-09": {...}, "2026-10": {...} }
+  let tousLesSeuils = {};
+  // seuils = ceux du mois affiché, utilisés par afficherResume()
   let seuils = {};
   let arreterEcouteSeuils = null;
 
-    function demarrerEcouteSeuils() {
-    arreterEcouteSeuils = onSnapshot(seuilsRef, function (snapshot) {
-      seuils = snapshot.exists() ? snapshot.data() : {};
+  // Trouve les seuils à utiliser pour un mois donné
+  function seuilsEffectifs(mois) {
+    // Cas 1 : le mois a ses propres seuils
+    if (tousLesSeuils[mois]) {
+      return { valeurs: tousLesSeuils[mois], source: mois };
+    }
+    // Cas 2 : on cherche les mois PLUS ANCIENS qui ont des seuils.
+    // Comparer "2026-09" < "2026-10" fonctionne : l'ordre alphabétique suit l'ordre des dates.
+    const anterieurs = Object.keys(tousLesSeuils).filter(function (m) { return m < mois; }).sort();
+    if (anterieurs.length > 0) {
+      const source = anterieurs[anterieurs.length - 1];   // le plus récent d'entre eux
+      return { valeurs: tousLesSeuils[source], source: source };
+    }
+    // Cas 3 : rien du tout
+    return { valeurs: {}, source: null };
+  }
+
+  // Met à jour les seuils actifs, le texte d'information et les champs du formulaire
+  function majSeuils() {
+    const mois = moisAffiche();
+    const effectifs = seuilsEffectifs(mois);
+    seuils = effectifs.valeurs;
+
+    if (effectifs.source === mois) {
+      infoSeuils.textContent = "Seuils enregistrés pour " + mois + ".";
+    } else if (effectifs.source) {
+      infoSeuils.textContent = "Aucun seuil enregistré pour " + mois + " : ceux de " +
+        effectifs.source + " sont repris. Enregistre pour les fixer pour ce mois.";
+    } else {
+      infoSeuils.textContent = "Aucun seuil défini pour " + mois + ".";
+    }
+
+    // On ne remplit pas les champs si quelqu'un est en train de les modifier
+    if (!formSeuils.contains(document.activeElement)) {
       for (const champ of champsSeuils.querySelectorAll("input")) {
         champ.value = seuils[champ.dataset.categorie] ?? "";
       }
-      afficherResume();                           // NOUVEAU : un seuil a changé, on recalcule
+    }
+  }
+
+  // Écoute en temps réel de TOUTE la collection des seuils (un document par mois)
+  function demarrerEcouteSeuils() {
+    arreterEcouteSeuils = onSnapshot(seuilsCol, function (snapshot) {
+      tousLesSeuils = {};
+      snapshot.forEach(function (document_) {
+        tousLesSeuils[document_.id] = document_.data();   // l'id du document = le mois
+      });
+      afficherTout();
     });
   }
-    // --- NOUVEAU : RÉSUMÉ PAR CATÉGORIE ---
+      
+      // --- RÉSUMÉ, VUE PAR JOUR ET LISTE (pour le mois choisi) ---
   const resume = document.getElementById("resume");
-  let toutesLesDepenses = [];   // copie des dépenses, mise à jour par l'écoute en temps réel
+  const parJour = document.getElementById("par-jour");
+  const champMois = document.getElementById("mois");
 
+  let toutesLesDepenses = [];
+
+  // Par défaut, le sélecteur affiche le mois en cours (format "AAAA-MM")
+  champMois.value = dateDuJour().slice(0, 7);
+  // Quand on change de mois, on réaffiche tout
+  champMois.addEventListener("change", afficherTout);
+
+  // Renvoie le mois choisi ; si le champ est vidé, on retombe sur le mois en cours
+  function moisAffiche() {
+    return champMois.value || dateDuJour().slice(0, 7);
+  }
+
+  // Appelle les trois affichages d'un coup
+    function afficherTout() {
+    majSeuils();          // NOUVEAU : choisit les seuils du mois affiché
+    afficherListe();
+    afficherResume();
+    afficherParJour();
+  }
+
+  // 1) La liste des dépenses du mois choisi
+  function afficherListe() {
+    liste.innerHTML = "";
+    const mois = moisAffiche();
+    for (const d of toutesLesDepenses) {
+      // "continue" = on passe à la dépense suivante (celle-ci est d'un autre mois)
+      if (!d.date.startsWith(mois)) continue;
+
+      const li = document.createElement("li");
+      li.textContent = d.date + " – " + d.categorie + " : " +
+                       d.montant.toFixed(2) + " €" +
+                       (d.note ? " (" + d.note + ")" : "") +
+                       (d.saisiPar ? " – par " + d.saisiPar : "");
+      liste.appendChild(li);
+    }
+  }
+
+  // 2) Le résumé par catégorie (comme avant, mais pour le mois choisi)
   function afficherResume() {
-    // Mois en cours au format "AAAA-MM", par exemple "2026-10"
-    const moisCourant = dateDuJour().slice(0, 7);
+    const mois = moisAffiche();
     resume.innerHTML = "";
 
     for (const nom of CATEGORIES) {
-      // 1) Total dépensé dans cette catégorie ce mois-ci
       let total = 0;
       for (const d of toutesLesDepenses) {
-        // startsWith : la date "2026-10-12" commence bien par "2026-10"
-        if (d.categorie === nom && d.date.startsWith(moisCourant)) {
+        if (d.categorie === nom && d.date.startsWith(mois)) {
           total += d.montant;
         }
       }
 
-      // 2) Seuil, reste et pourcentage
       const seuil = seuils[nom] || 0;
       const reste = seuil - total;
       const pourcentage = seuil > 0 ? (total / seuil) * 100 : 0;
 
-      // 3) Construction de l'affichage
       const bloc = document.createElement("div");
       bloc.className = "categorie";
 
@@ -350,7 +427,6 @@
       }
       bloc.appendChild(detail);
 
-      // La barre (seulement si un seuil existe)
       if (seuil > 0) {
         const barre = document.createElement("div");
         barre.className = "barre";
@@ -358,13 +434,47 @@
         remplissage.className = "remplissage";
         if (pourcentage >= 100) remplissage.classList.add("rouge");
         else if (pourcentage >= 80) remplissage.classList.add("orange");
-        // Math.min : la barre ne dépasse jamais 100 % de largeur
         remplissage.style.width = Math.min(pourcentage, 100) + "%";
         barre.appendChild(remplissage);
         bloc.appendChild(barre);
       }
 
       resume.appendChild(bloc);
+    }
+  }
+
+  // 3) NOUVEAU : le total de chaque jour du mois choisi
+  function afficherParJour() {
+    parJour.innerHTML = "";
+    const mois = moisAffiche();
+
+    // totaux est un objet qui associe chaque jour à son total :
+    // { "2026-10-12": 34.5, "2026-10-13": 12, ... }
+    const totaux = {};
+    let totalMois = 0;
+    for (const d of toutesLesDepenses) {
+      if (!d.date.startsWith(mois)) continue;
+      // (totaux[d.date] || 0) : si le jour n'existe pas encore, on part de 0
+      totaux[d.date] = (totaux[d.date] || 0) + d.montant;
+      totalMois += d.montant;
+    }
+
+    // Object.keys donne la liste des jours ; on les trie du plus récent au plus ancien
+    const jours = Object.keys(totaux).sort().reverse();
+
+    if (jours.length === 0) {
+      parJour.textContent = "Aucune dépense ce mois-ci.";
+      return;
+    }
+
+    const total = document.createElement("strong");
+    total.textContent = "Total du mois : " + totalMois.toFixed(2) + " €";
+    parJour.appendChild(total);
+
+    for (const jour of jours) {
+      const ligne = document.createElement("div");
+      ligne.textContent = jour + " : " + totaux[jour].toFixed(2) + " €";
+      parJour.appendChild(ligne);
     }
   }
 
