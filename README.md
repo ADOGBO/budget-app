@@ -31,6 +31,8 @@ manifest.json    description de l'application installable
 sw.js            service worker (mode hors ligne)
 icon-192.png     icône
 icon-512.png     icône
+essai.html       première version de l'application
+budjet-projet.pdf explication du projet
 ```
 
 ## Installer l'application sur un téléphone
