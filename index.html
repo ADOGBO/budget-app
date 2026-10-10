@@ -88,64 +88,87 @@
     
   </main>
 
-    <script>
-    // Un tableau : une liste qui contiendra toutes les dépenses.
-    // "const" = on ne remplace pas le tableau, mais on peut y ajouter des éléments.
-    const depenses = [];
-  
-    // On récupère les éléments de la page grâce à leur id
-    const formulaire = document.getElementById("form-depense");
-    const liste = document.getElementById("liste");
-  
-    // Renvoie la date du jour au format AAAA-MM-JJ (le format attendu par le champ date).
-    // "sv-SE" (suédois) est une astuce : cette langue écrit les dates exactement ainsi.
-    function dateDuJour() {
-      return new Date().toLocaleDateString("sv-SE");
+    <!-- type="module" : nécessaire pour utiliser "import" -->
+<script type="module">
+  // 1) On importe les outils Firebase depuis les serveurs de Google
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy }
+    from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+  // 2) La configuration : elle dit à la page quel projet Firebase utiliser
+  const firebaseConfig = {
+    apiKey: "AIzaSyCqOSzPuamD_Q-p5keXnzRzPpK7C9GN1m8",
+    authDomain: "budget-app-67ceb.firebaseapp.com",
+    projectId: "budget-app-67ceb",
+    storageBucket: "budget-app-67ceb.firebasestorage.app",
+    messagingSenderId: "939010447229",
+    appId: "1:939010447229:web:ecd2272109378898011e14"
+  };
+
+  // 3) On démarre Firebase, puis on se connecte à la base Firestore
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Dans Firestore, les données sont rangées dans des "collections".
+  // Ici : une collection "depenses", créée automatiquement à la première dépense.
+  const depensesRef = collection(db, "depenses");
+
+  // --- Éléments de la page ---
+  const formulaire = document.getElementById("form-depense");
+  const liste = document.getElementById("liste");
+
+  function dateDuJour() {
+    return new Date().toLocaleDateString("sv-SE");
+  }
+  document.getElementById("date").value = dateDuJour();
+
+  // --- ENVOI : quand on clique sur "Ajouter la dépense" ---
+  // "async" : la fonction peut attendre (await) la réponse d'Internet
+  formulaire.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const depense = {
+      categorie: document.getElementById("categorie").value,
+      date: document.getElementById("date").value,
+      montant: parseFloat(document.getElementById("montant").value),
+      note: document.getElementById("note").value
+    };
+
+    if (isNaN(depense.montant) || depense.montant <= 0) {
+      alert("Entre un montant valide.");
+      return;
     }
-  
-    // On pré-remplit le champ date avec aujourd'hui
-    document.getElementById("date").value = dateDuJour();
-  
-    // "Quand le formulaire est envoyé (clic sur le bouton), exécute cette fonction"
-    formulaire.addEventListener("submit", function (event) {
-      // Par défaut, envoyer un formulaire recharge la page : on l'empêche
-      event.preventDefault();
-  
-      // Un objet : un « paquet » qui regroupe les infos d'une dépense
-      const depense = {
-        categorie: document.getElementById("categorie").value,
-        date: document.getElementById("date").value,
-        montant: parseFloat(document.getElementById("montant").value), // texte -> nombre
-        note: document.getElementById("note").value
-      };
-  
-      // Vérification : le montant doit être un nombre positif
-      if (isNaN(depense.montant) || depense.montant <= 0) {
-        alert("Entre un montant valide.");
-        return; // on s'arrête ici
-      }
-  
-      depenses.push(depense);   // on ajoute la dépense à la fin du tableau
-      afficherListe();          // on met à jour l'affichage
-  
-      // On vide le formulaire, puis on remet la date du jour
+
+    // try/catch : si l'envoi échoue (pas de réseau, accès refusé...),
+    // on affiche l'erreur au lieu de planter en silence
+    try {
+      // addDoc envoie la dépense dans Firestore ; "await" attend la confirmation
+      await addDoc(depensesRef, depense);
       formulaire.reset();
       document.getElementById("date").value = dateDuJour();
-    });
-  
-    // Reconstruit la liste affichée à partir du tableau
-    function afficherListe() {
-      liste.innerHTML = "";                  // on efface l'ancienne liste
-      for (const d of depenses) {            // pour chaque dépense du tableau...
-        const li = document.createElement("li");   // ...on crée une ligne de liste
-        // textContent insère du texte brut (plus sûr que innerHTML)
-        li.textContent = d.date + " – " + d.categorie + " : " +
-                         d.montant.toFixed(2) + " €" +
-                         (d.note ? " (" + d.note + ")" : "");
-        liste.appendChild(li);               // ...et on l'ajoute à la page
-      }
+    } catch (erreur) {
+      alert("Erreur d'enregistrement : " + erreur.message);
     }
-  </script>
+  });
+
+  // --- LECTURE EN TEMPS RÉEL ---
+  // On demande les dépenses triées par date, de la plus récente à la plus ancienne
+  const requete = query(depensesRef, orderBy("date", "desc"));
+
+  // onSnapshot : "écoute" la base. Cette fonction s'exécute au chargement
+  // PUIS automatiquement à chaque changement (même fait depuis un autre téléphone).
+  onSnapshot(requete, function (snapshot) {
+    liste.innerHTML = "";
+    snapshot.forEach(function (doc) {
+      const d = doc.data();   // récupère le contenu de la dépense
+      const li = document.createElement("li");
+      li.textContent = d.date + " – " + d.categorie + " : " +
+                       d.montant.toFixed(2) + " €" +
+                       (d.note ? " (" + d.note + ")" : "");
+      liste.appendChild(li);
+    });
+  });
+</script>
 
   
 </body>
