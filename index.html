@@ -51,6 +51,13 @@
 
     #btn-deconnexion { background: #888; margin-top: 0; }  /* bouton gris, plus discret */
     #erreur-connexion { color: #c0392b; }                  /* message d'erreur en rouge */
+
+    .categorie { margin-top: 12px; }
+/* La barre grise (le "fond") et le remplissage coloré par-dessus */
+.barre { background: #ddd; border-radius: 6px; height: 12px; overflow: hidden; margin-top: 4px; }
+.remplissage { height: 100%; background: #27ae60; }      /* vert */
+.remplissage.orange { background: #f39c12; }             /* 80 % du seuil atteint */
+.remplissage.rouge { background: #c0392b; }              /* seuil dépassé */
     
   </style>
 </head>
@@ -78,6 +85,8 @@
 <main id="ecran-appli" hidden>
   <p>Connecté : <strong id="nom-utilisateur"></strong></p>
   <button id="btn-deconnexion">Se déconnecter</button>
+  <h2>Ce mois-ci</h2>
+  <div id="resume"></div>
   
     <!-- Le formulaire : chaque <label> décrit un champ, chaque <input>/<select> est le champ lui-même -->
     <form id="form-depense">
@@ -217,22 +226,24 @@
   // onSnapshot renvoie une fonction qui permet d'arrêter l'écoute : on la garde.
   let arreterEcoute = null;
 
-  function demarrerEcoute() {
+    function demarrerEcoute() {
     const requete = query(depensesRef, orderBy("date", "desc"));
     arreterEcoute = onSnapshot(
       requete,
       function (snapshot) {
         liste.innerHTML = "";
+        toutesLesDepenses = [];                   // NOUVEAU : on repart d'une liste vide
         snapshot.forEach(function (doc) {
           const d = doc.data();
+          toutesLesDepenses.push(d);              // NOUVEAU : on mémorise la dépense
           const li = document.createElement("li");
           li.textContent = d.date + " – " + d.categorie + " : " +
                            d.montant.toFixed(2) + " €" +
                            (d.note ? " (" + d.note + ")" : "") +
-                           // NOUVEAU : les anciennes dépenses de test n'ont pas de "saisiPar"
                            (d.saisiPar ? " – par " + d.saisiPar : "");
           liste.appendChild(li);
         });
+        afficherResume();                         // NOUVEAU : on recalcule les barres
       },
       function (erreur) {
         console.error("Erreur de lecture :", erreur);
@@ -288,15 +299,73 @@
   let seuils = {};
   let arreterEcouteSeuils = null;
 
-  function demarrerEcouteSeuils() {
+    function demarrerEcouteSeuils() {
     arreterEcouteSeuils = onSnapshot(seuilsRef, function (snapshot) {
-      // exists() : le document n'existe pas tant qu'on n'a rien enregistré
       seuils = snapshot.exists() ? snapshot.data() : {};
       for (const champ of champsSeuils.querySelectorAll("input")) {
-        // ?? "" : si aucun seuil n'est défini, le champ reste vide
         champ.value = seuils[champ.dataset.categorie] ?? "";
       }
+      afficherResume();                           // NOUVEAU : un seuil a changé, on recalcule
     });
+  }
+    // --- NOUVEAU : RÉSUMÉ PAR CATÉGORIE ---
+  const resume = document.getElementById("resume");
+  let toutesLesDepenses = [];   // copie des dépenses, mise à jour par l'écoute en temps réel
+
+  function afficherResume() {
+    // Mois en cours au format "AAAA-MM", par exemple "2026-10"
+    const moisCourant = dateDuJour().slice(0, 7);
+    resume.innerHTML = "";
+
+    for (const nom of CATEGORIES) {
+      // 1) Total dépensé dans cette catégorie ce mois-ci
+      let total = 0;
+      for (const d of toutesLesDepenses) {
+        // startsWith : la date "2026-10-12" commence bien par "2026-10"
+        if (d.categorie === nom && d.date.startsWith(moisCourant)) {
+          total += d.montant;
+        }
+      }
+
+      // 2) Seuil, reste et pourcentage
+      const seuil = seuils[nom] || 0;
+      const reste = seuil - total;
+      const pourcentage = seuil > 0 ? (total / seuil) * 100 : 0;
+
+      // 3) Construction de l'affichage
+      const bloc = document.createElement("div");
+      bloc.className = "categorie";
+
+      const titre = document.createElement("strong");
+      titre.textContent = nom + " : " + total.toFixed(2) + " € / " + seuil.toFixed(2) + " €";
+      bloc.appendChild(titre);
+
+      const detail = document.createElement("div");
+      if (seuil === 0) {
+        detail.textContent = "Seuil non défini";
+      } else if (reste >= 0) {
+        detail.textContent = "Reste : " + reste.toFixed(2) + " €";
+      } else {
+        detail.textContent = "Dépassement de " + (-reste).toFixed(2) + " €";
+      }
+      bloc.appendChild(detail);
+
+      // La barre (seulement si un seuil existe)
+      if (seuil > 0) {
+        const barre = document.createElement("div");
+        barre.className = "barre";
+        const remplissage = document.createElement("div");
+        remplissage.className = "remplissage";
+        if (pourcentage >= 100) remplissage.classList.add("rouge");
+        else if (pourcentage >= 80) remplissage.classList.add("orange");
+        // Math.min : la barre ne dépasse jamais 100 % de largeur
+        remplissage.style.width = Math.min(pourcentage, 100) + "%";
+        barre.appendChild(remplissage);
+        bloc.appendChild(barre);
+      }
+
+      resume.appendChild(bloc);
+    }
   }
 
   // --- NOUVEAU : SURVEILLER L'ÉTAT DE CONNEXION ---
