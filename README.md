@@ -61,9 +61,3 @@ service cloud.firestore {
 ## Sécurité
 
 La configuration Firebase présente dans `index.html` (dont `apiKey`) est publique par conception : elle identifie le projet mais ne protège rien. La protection des données repose sur l'authentification et sur les règles de sécurité Firestore ci-dessus.
-
-## Évolutions envisagées
-
-- Graphiques (répartition par catégorie, évolution dans le mois)
-- Comparaison entre mois
-- Catégories personnalisables
