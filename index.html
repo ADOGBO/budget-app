@@ -48,6 +48,10 @@
           border-radius: 6px;
           margin-top: 16px;
         }
+
+    #btn-deconnexion { background: #888; margin-top: 0; }  /* bouton gris, plus discret */
+    #erreur-connexion { color: #c0392b; }                  /* message d'erreur en rouge */
+    
   </style>
 </head>
 <body>
@@ -55,7 +59,26 @@
     <h1>Mon budget</h1>
   </header>
 
-  <main>
+  <!-- Écran de connexion : visible seulement si personne n'est connecté -->
+    <main id="ecran-connexion">
+      <form id="form-connexion">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" required>
+    
+        <label for="mdp">Mot de passe</label>
+        <input type="password" id="mdp" required>
+    
+        <button type="submit">Se connecter</button>
+        <p id="erreur-connexion"></p>
+      </form>
+    </main>
+  
+
+  <!-- "hidden" = cachée au départ ; le script la montrera après la connexion -->
+<main id="ecran-appli" hidden>
+  <p>Connecté : <strong id="nom-utilisateur"></strong></p>
+  <button id="btn-deconnexion">Se déconnecter</button>
+  
     <!-- Le formulaire : chaque <label> décrit un champ, chaque <input>/<select> est le champ lui-même -->
     <form id="form-depense">
     
@@ -88,14 +111,14 @@
     
   </main>
 
-    <!-- type="module" : nécessaire pour utiliser "import" -->
-<script type="module">
-  // 1) On importe les outils Firebase depuis les serveurs de Google
+    <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getFirestore, collection, addDoc, onSnapshot, query, orderBy }
     from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  // NOUVEAU : les outils de connexion
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
-  // 2) La configuration : elle dit à la page quel projet Firebase utiliser
   const firebaseConfig = {
     apiKey: "AIzaSyCqOSzPuamD_Q-p5keXnzRzPpK7C9GN1m8",
     authDomain: "budget-app-67ceb.firebaseapp.com",
@@ -105,25 +128,54 @@
     appId: "1:939010447229:web:ecd2272109378898011e14"
   };
 
-  // 3) On démarre Firebase, puis on se connecte à la base Firestore
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
-
-  // Dans Firestore, les données sont rangées dans des "collections".
-  // Ici : une collection "depenses", créée automatiquement à la première dépense.
+  const auth = getAuth(app);               // NOUVEAU : le service de connexion
   const depensesRef = collection(db, "depenses");
 
   // --- Éléments de la page ---
   const formulaire = document.getElementById("form-depense");
   const liste = document.getElementById("liste");
+  // NOUVEAU
+  const ecranConnexion = document.getElementById("ecran-connexion");
+  const ecranAppli = document.getElementById("ecran-appli");
+  const formConnexion = document.getElementById("form-connexion");
+  const erreurConnexion = document.getElementById("erreur-connexion");
+  const nomUtilisateur = document.getElementById("nom-utilisateur");
+  const btnDeconnexion = document.getElementById("btn-deconnexion");
 
   function dateDuJour() {
     return new Date().toLocaleDateString("sv-SE");
   }
   document.getElementById("date").value = dateDuJour();
 
-  // --- ENVOI : quand on clique sur "Ajouter la dépense" ---
-  // "async" : la fonction peut attendre (await) la réponse d'Internet
+  // NOUVEAU : nom court affiché = ce qui est avant le "@" de l'e-mail
+  function nomCourt(utilisateur) {
+    return utilisateur.email.split("@")[0];
+  }
+
+  // --- NOUVEAU : CONNEXION ---
+  formConnexion.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    erreurConnexion.textContent = "";
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        document.getElementById("email").value,
+        document.getElementById("mdp").value
+      );
+      formConnexion.reset();   // on efface le mot de passe saisi
+    } catch (erreur) {
+      erreurConnexion.textContent = "E-mail ou mot de passe incorrect.";
+    }
+  });
+
+  // --- NOUVEAU : DÉCONNEXION ---
+  btnDeconnexion.addEventListener("click", function () {
+    signOut(auth);
+  });
+
+  // --- ENVOI D'UNE DÉPENSE ---
   formulaire.addEventListener("submit", async function (event) {
     event.preventDefault();
 
@@ -131,7 +183,9 @@
       categorie: document.getElementById("categorie").value,
       date: document.getElementById("date").value,
       montant: parseFloat(document.getElementById("montant").value),
-      note: document.getElementById("note").value
+      note: document.getElementById("note").value,
+      // NOUVEAU : qui a saisi la dépense, d'après le compte connecté
+      saisiPar: nomCourt(auth.currentUser)
     };
 
     if (isNaN(depense.montant) || depense.montant <= 0) {
@@ -139,10 +193,7 @@
       return;
     }
 
-    // try/catch : si l'envoi échoue (pas de réseau, accès refusé...),
-    // on affiche l'erreur au lieu de planter en silence
     try {
-      // addDoc envoie la dépense dans Firestore ; "await" attend la confirmation
       await addDoc(depensesRef, depense);
       formulaire.reset();
       document.getElementById("date").value = dateDuJour();
@@ -152,21 +203,51 @@
   });
 
   // --- LECTURE EN TEMPS RÉEL ---
-  // On demande les dépenses triées par date, de la plus récente à la plus ancienne
-  const requete = query(depensesRef, orderBy("date", "desc"));
+  // NOUVEAU : on ne l'active plus au chargement mais APRÈS la connexion.
+  // onSnapshot renvoie une fonction qui permet d'arrêter l'écoute : on la garde.
+  let arreterEcoute = null;
 
-  // onSnapshot : "écoute" la base. Cette fonction s'exécute au chargement
-  // PUIS automatiquement à chaque changement (même fait depuis un autre téléphone).
-  onSnapshot(requete, function (snapshot) {
-    liste.innerHTML = "";
-    snapshot.forEach(function (doc) {
-      const d = doc.data();   // récupère le contenu de la dépense
-      const li = document.createElement("li");
-      li.textContent = d.date + " – " + d.categorie + " : " +
-                       d.montant.toFixed(2) + " €" +
-                       (d.note ? " (" + d.note + ")" : "");
-      liste.appendChild(li);
-    });
+  function demarrerEcoute() {
+    const requete = query(depensesRef, orderBy("date", "desc"));
+    arreterEcoute = onSnapshot(
+      requete,
+      function (snapshot) {
+        liste.innerHTML = "";
+        snapshot.forEach(function (doc) {
+          const d = doc.data();
+          const li = document.createElement("li");
+          li.textContent = d.date + " – " + d.categorie + " : " +
+                           d.montant.toFixed(2) + " €" +
+                           (d.note ? " (" + d.note + ")" : "") +
+                           // NOUVEAU : les anciennes dépenses de test n'ont pas de "saisiPar"
+                           (d.saisiPar ? " – par " + d.saisiPar : "");
+          liste.appendChild(li);
+        });
+      },
+      function (erreur) {
+        console.error("Erreur de lecture :", erreur);
+      }
+    );
+  }
+
+  // --- NOUVEAU : SURVEILLER L'ÉTAT DE CONNEXION ---
+  // Cette fonction s'exécute au chargement, puis à chaque connexion/déconnexion.
+  // "user" contient le compte si on est connecté, sinon "null".
+  onAuthStateChanged(auth, function (user) {
+    if (user) {
+      ecranConnexion.hidden = true;     // on cache la connexion
+      ecranAppli.hidden = false;        // on montre l'appli
+      nomUtilisateur.textContent = nomCourt(user);
+      demarrerEcoute();
+    } else {
+      ecranConnexion.hidden = false;
+      ecranAppli.hidden = true;
+      if (arreterEcoute) {              // on arrête d'écouter la base
+        arreterEcoute();
+        arreterEcoute = null;
+      }
+      liste.innerHTML = "";
+    }
   });
 </script>
 
