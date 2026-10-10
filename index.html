@@ -6,6 +6,11 @@
   <!-- Permet d'afficher correctement la page sur téléphone (sans cette ligne, elle serait minuscule) -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Budget</title>
+  <!-- Fiche d'identité de l'appli (nom, icônes, couleurs) -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2c7be5">
+<!-- Icône utilisée sur iPhone -->
+<link rel="apple-touch-icon" href="icon-192.png">
 
   <style>
     /* Style de toute la page */
@@ -58,6 +63,12 @@
 .remplissage { height: 100%; background: #27ae60; }      /* vert */
 .remplissage.orange { background: #f39c12; }             /* 80 % du seuil atteint */
 .remplissage.rouge { background: #c0392b; }              /* seuil dépassé */
+#btn-export { background: #555; }
+    
+#btn-annuler { background: #888; }
+li { margin-top: 10px; }
+/* Petits boutons "Modifier" / "Supprimer" dans la liste */
+li button { width: auto; margin: 4px 6px 0 0; padding: 4px 10px; font-size: 14px; }
     
   </style>
 </head>
@@ -116,7 +127,9 @@
       <label for="note">Note (facultatif)</label>
       <input type="text" id="note">
     
-      <button type="submit">Ajouter la dépense</button>
+      <button type="submit" id="btn-valider">Ajouter la dépense</button>
+      <!-- Caché sauf pendant une modification -->
+      <button type="button" id="btn-annuler" hidden>Annuler la modification</button>
     </form>
     <!-- <details> = bloc repliable, pratique sur mobile -->
         <details>
@@ -132,12 +145,15 @@
     <!-- Zone où s'affichera la liste des dépenses saisies -->
     <h2>Dépenses saisies</h2>
     <ul id="liste"></ul>
+    <button id="btn-export">Exporter en CSV</button>
+  
     
   </main>
 
     <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc }
+      import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+           collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, doc, setDoc }
     from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
       
   // NOUVEAU : les outils de connexion
@@ -154,7 +170,12 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+    // Cache local persistant : Firestore garde une copie des données sur l'appareil.
+  // Hors ligne, on peut consulter et saisir ; l'envoi se fait au retour du réseau.
+  // persistentMultipleTabManager : évite les problèmes si l'appli est ouverte dans plusieurs onglets.
+  const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
   const auth = getAuth(app);               // NOUVEAU : le service de connexion
   const depensesRef = collection(db, "depenses");
 
@@ -200,17 +221,44 @@
     signOut(auth);
   });
 
-  // --- ENVOI D'UNE DÉPENSE ---
-  formulaire.addEventListener("submit", async function (event) {
+    // --- ÉDITION D'UNE DÉPENSE ---
+  const btnValider = document.getElementById("btn-valider");
+  const btnAnnuler = document.getElementById("btn-annuler");
+  // Identifiant de la dépense en cours de modification (null = on en ajoute une nouvelle)
+  let depenseEnEdition = null;
+
+  // Charge une dépense dans le formulaire pour la modifier
+  function commencerEdition(d) {
+    depenseEnEdition = d.id;
+    document.getElementById("categorie").value = d.categorie;
+    document.getElementById("date").value = d.date;
+    document.getElementById("montant").value = d.montant;
+    document.getElementById("note").value = d.note || "";
+    btnValider.textContent = "Enregistrer la modification";
+    btnAnnuler.hidden = false;
+    formulaire.scrollIntoView({ behavior: "smooth" });   // remonte vers le formulaire
+  }
+
+  // Remet le formulaire en mode "ajout"
+  function terminerEdition() {
+    depenseEnEdition = null;
+    formulaire.reset();
+    document.getElementById("date").value = dateDuJour();
+    btnValider.textContent = "Ajouter la dépense";
+    btnAnnuler.hidden = true;
+  }
+
+  btnAnnuler.addEventListener("click", terminerEdition);
+
+  // --- ENVOI D'UNE DÉPENSE (ajout OU modification) ---
+  formulaire.addEventListener("submit", function (event) {
     event.preventDefault();
 
     const depense = {
       categorie: document.getElementById("categorie").value,
       date: document.getElementById("date").value,
       montant: parseFloat(document.getElementById("montant").value),
-      note: document.getElementById("note").value,
-      // NOUVEAU : qui a saisi la dépense, d'après le compte connecté
-      saisiPar: nomCourt(auth.currentUser)
+      note: document.getElementById("note").value
     };
 
     if (isNaN(depense.montant) || depense.montant <= 0) {
@@ -218,15 +266,21 @@
       return;
     }
 
-    try {
-      await addDoc(depensesRef, depense);
-      formulaire.reset();
-      document.getElementById("date").value = dateDuJour();
-    } catch (erreur) {
-      alert("Erreur d'enregistrement : " + erreur.message);
+    // Pas de "await" ici : on n'attend plus la confirmation du serveur.
+    // Hors ligne, la dépense apparaît tout de suite et sera envoyée au retour du réseau.
+    // .catch() affiche l'erreur si l'envoi est refusé.
+    if (depenseEnEdition) {
+      // updateDoc modifie la dépense existante, repérée par son id
+      updateDoc(doc(db, "depenses", depenseEnEdition), depense)
+        .catch(function (erreur) { alert("Erreur de modification : " + erreur.message); });
+    } else {
+      depense.saisiPar = nomCourt(auth.currentUser);   // on ne change pas "saisi par" lors d'une modification
+      addDoc(depensesRef, depense)
+        .catch(function (erreur) { alert("Erreur d'enregistrement : " + erreur.message); });
     }
+    terminerEdition();
   });
-
+      
   // --- LECTURE EN TEMPS RÉEL ---
   // NOUVEAU : on ne l'active plus au chargement mais APRÈS la connexion.
   // onSnapshot renvoie une fonction qui permet d'arrêter l'écoute : on la garde.
@@ -377,22 +431,41 @@
   }
 
   // 1) La liste des dépenses du mois choisi
-  function afficherListe() {
+    function afficherListe() {
     liste.innerHTML = "";
     const mois = moisAffiche();
     for (const d of toutesLesDepenses) {
-      // "continue" = on passe à la dépense suivante (celle-ci est d'un autre mois)
       if (!d.date.startsWith(mois)) continue;
 
       const li = document.createElement("li");
-      li.textContent = d.date + " – " + d.categorie + " : " +
-                       d.montant.toFixed(2) + " €" +
-                       (d.note ? " (" + d.note + ")" : "") +
-                       (d.saisiPar ? " – par " + d.saisiPar : "");
+
+      const texte = document.createElement("span");
+      texte.textContent = d.date + " – " + d.categorie + " : " +
+                          d.montant.toFixed(2) + " €" +
+                          (d.note ? " (" + d.note + ")" : "") +
+                          (d.saisiPar ? " – par " + d.saisiPar : "");
+      li.appendChild(texte);
+      li.appendChild(document.createElement("br"));   // retour à la ligne avant les boutons
+
+      // Bouton Modifier : charge la dépense "d" dans le formulaire
+      const btnModifier = document.createElement("button");
+      btnModifier.textContent = "Modifier";
+      btnModifier.addEventListener("click", function () { commencerEdition(d); });
+      li.appendChild(btnModifier);
+
+      // Bouton Supprimer : demande confirmation, puis supprime via l'id
+      const btnSupprimer = document.createElement("button");
+      btnSupprimer.textContent = "Supprimer";
+      btnSupprimer.addEventListener("click", function () {
+        if (!confirm("Supprimer cette dépense ?")) return;
+        deleteDoc(doc(db, "depenses", d.id))
+          .catch(function (erreur) { alert("Erreur de suppression : " + erreur.message); });
+      });
+      li.appendChild(btnSupprimer);
+
       liste.appendChild(li);
     }
   }
-
   // 2) Le résumé par catégorie (comme avant, mais pour le mois choisi)
   function afficherResume() {
     const mois = moisAffiche();
@@ -478,6 +551,37 @@
     }
   }
 
+    // --- EXPORT CSV (toutes les dépenses, tous les mois) ---
+  // Met un texte entre guillemets (et double les guillemets internes) pour ne pas casser le CSV
+  function entreGuillemets(texte) {
+    return '"' + String(texte).replace(/"/g, '""') + '"';
+  }
+
+  document.getElementById("btn-export").addEventListener("click", function () {
+    // Séparateur ";" et virgule décimale : c'est ce qu'attend Excel en version française
+    const lignes = ["date;categorie;montant;note;saisi_par"];
+    for (const d of toutesLesDepenses) {
+      lignes.push([
+        d.date,
+        entreGuillemets(d.categorie),
+        String(d.montant).replace(".", ","),
+        entreGuillemets(d.note || ""),
+        entreGuillemets(d.saisiPar || "")
+      ].join(";"));
+    }
+
+    // "\uFEFF" au début : indique à Excel que le fichier est en UTF-8 (pour les accents)
+    const contenu = "\uFEFF" + lignes.join("\r\n");
+    const fichier = new Blob([contenu], { type: "text/csv;charset=utf-8" });
+
+    // On fabrique un lien de téléchargement invisible et on clique dessus
+    const lien = document.createElement("a");
+    lien.href = URL.createObjectURL(fichier);
+    lien.download = "depenses.csv";
+    lien.click();
+    setTimeout(function () { URL.revokeObjectURL(lien.href); }, 1000);
+  });
+
   // --- NOUVEAU : SURVEILLER L'ÉTAT DE CONNEXION ---
   // Cette fonction s'exécute au chargement, puis à chaque connexion/déconnexion.
   // "user" contient le compte si on est connecté, sinon "null".
@@ -502,6 +606,10 @@
     liste.innerHTML = "";
   }
 });
+        // Enregistre le "service worker" (fichier sw.js) qui permet d'ouvrir l'appli hors ligne
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js");
+  }
 </script>
 
   
