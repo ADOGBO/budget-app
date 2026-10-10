@@ -104,6 +104,15 @@
     
       <button type="submit">Ajouter la dépense</button>
     </form>
+    <!-- <details> = bloc repliable, pratique sur mobile -->
+        <details>
+          <summary>Seuils mensuels (€)</summary>
+          <form id="form-seuils">
+            <!-- Les champs sont créés par le script, un par catégorie -->
+            <div id="champs-seuils"></div>
+            <button type="submit">Enregistrer les seuils</button>
+          </form>
+        </details>
 
     <!-- Zone où s'affichera la liste des dépenses saisies -->
     <h2>Dépenses saisies</h2>
@@ -113,8 +122,9 @@
 
     <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy }
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc }
     from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+      
   // NOUVEAU : les outils de connexion
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -230,25 +240,89 @@
     );
   }
 
+    // --- NOUVEAU : SEUILS ---
+  // La liste des catégories, à un seul endroit (pratique si on en ajoute plus tard)
+  const CATEGORIES = ["Alimentaire générale", "Restaurant", "Vêtements", "Divers"];
+
+  // doc() désigne UN document précis : collection "reglages", document "seuils"
+  const seuilsRef = doc(db, "reglages", "seuils");
+
+  const champsSeuils = document.getElementById("champs-seuils");
+  const formSeuils = document.getElementById("form-seuils");
+
+  // Une boucle crée un champ (avec son étiquette) pour chaque catégorie
+  for (const nom of CATEGORIES) {
+    const etiquette = document.createElement("label");
+    etiquette.textContent = nom;
+
+    const champ = document.createElement("input");
+    champ.type = "number";
+    champ.min = "0";
+    champ.dataset.categorie = nom;   // on mémorise à quelle catégorie appartient le champ
+
+    champsSeuils.appendChild(etiquette);
+    champsSeuils.appendChild(champ);
+  }
+
+  // Enregistrement des seuils
+  formSeuils.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    // Un objet du type { "Restaurant": 100, "Divers": 50, ... }
+    const nouveauxSeuils = {};
+    for (const champ of champsSeuils.querySelectorAll("input")) {
+      // parseFloat(...) || 0 : si le champ est vide, on met 0
+      nouveauxSeuils[champ.dataset.categorie] = parseFloat(champ.value) || 0;
+    }
+
+    try {
+      // setDoc écrit (ou remplace) le document "seuils"
+      await setDoc(seuilsRef, nouveauxSeuils);
+      alert("Seuils enregistrés.");
+    } catch (erreur) {
+      alert("Erreur : " + erreur.message);
+    }
+  });
+
+  // Lecture en temps réel des seuils (on s'en servira en 6b pour calculer le reste)
+  let seuils = {};
+  let arreterEcouteSeuils = null;
+
+  function demarrerEcouteSeuils() {
+    arreterEcouteSeuils = onSnapshot(seuilsRef, function (snapshot) {
+      // exists() : le document n'existe pas tant qu'on n'a rien enregistré
+      seuils = snapshot.exists() ? snapshot.data() : {};
+      for (const champ of champsSeuils.querySelectorAll("input")) {
+        // ?? "" : si aucun seuil n'est défini, le champ reste vide
+        champ.value = seuils[champ.dataset.categorie] ?? "";
+      }
+    });
+  }
+
   // --- NOUVEAU : SURVEILLER L'ÉTAT DE CONNEXION ---
   // Cette fonction s'exécute au chargement, puis à chaque connexion/déconnexion.
   // "user" contient le compte si on est connecté, sinon "null".
   onAuthStateChanged(auth, function (user) {
-    if (user) {
-      ecranConnexion.hidden = true;     // on cache la connexion
-      ecranAppli.hidden = false;        // on montre l'appli
-      nomUtilisateur.textContent = nomCourt(user);
-      demarrerEcoute();
-    } else {
-      ecranConnexion.hidden = false;
-      ecranAppli.hidden = true;
-      if (arreterEcoute) {              // on arrête d'écouter la base
-        arreterEcoute();
-        arreterEcoute = null;
-      }
-      liste.innerHTML = "";
+  if (user) {
+    ecranConnexion.hidden = true;
+    ecranAppli.hidden = false;
+    nomUtilisateur.textContent = nomCourt(user);
+    demarrerEcoute();
+    demarrerEcouteSeuils();
+  } else {
+    ecranConnexion.hidden = false;
+    ecranAppli.hidden = true;
+    if (arreterEcoute) {              // arrêt de l'écoute des dépenses (à remettre)
+      arreterEcoute();
+      arreterEcoute = null;
     }
-  });
+    if (arreterEcouteSeuils) {        // arrêt de l'écoute des seuils
+      arreterEcouteSeuils();
+      arreterEcouteSeuils = null;
+    }
+    liste.innerHTML = "";
+  }
+});
 </script>
 
   
