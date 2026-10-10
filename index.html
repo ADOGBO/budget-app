@@ -81,7 +81,72 @@
     
       <button type="submit">Ajouter la dépense</button>
     </form>
+
+    <!-- Zone où s'affichera la liste des dépenses saisies -->
+    <h2>Dépenses saisies</h2>
+    <ul id="liste"></ul>
     
   </main>
+
+    <script>
+    // Un tableau : une liste qui contiendra toutes les dépenses.
+    // "const" = on ne remplace pas le tableau, mais on peut y ajouter des éléments.
+    const depenses = [];
+  
+    // On récupère les éléments de la page grâce à leur id
+    const formulaire = document.getElementById("form-depense");
+    const liste = document.getElementById("liste");
+  
+    // Renvoie la date du jour au format AAAA-MM-JJ (le format attendu par le champ date).
+    // "sv-SE" (suédois) est une astuce : cette langue écrit les dates exactement ainsi.
+    function dateDuJour() {
+      return new Date().toLocaleDateString("sv-SE");
+    }
+  
+    // On pré-remplit le champ date avec aujourd'hui
+    document.getElementById("date").value = dateDuJour();
+  
+    // "Quand le formulaire est envoyé (clic sur le bouton), exécute cette fonction"
+    formulaire.addEventListener("submit", function (event) {
+      // Par défaut, envoyer un formulaire recharge la page : on l'empêche
+      event.preventDefault();
+  
+      // Un objet : un « paquet » qui regroupe les infos d'une dépense
+      const depense = {
+        categorie: document.getElementById("categorie").value,
+        date: document.getElementById("date").value,
+        montant: parseFloat(document.getElementById("montant").value), // texte -> nombre
+        note: document.getElementById("note").value
+      };
+  
+      // Vérification : le montant doit être un nombre positif
+      if (isNaN(depense.montant) || depense.montant <= 0) {
+        alert("Entre un montant valide.");
+        return; // on s'arrête ici
+      }
+  
+      depenses.push(depense);   // on ajoute la dépense à la fin du tableau
+      afficherListe();          // on met à jour l'affichage
+  
+      // On vide le formulaire, puis on remet la date du jour
+      formulaire.reset();
+      document.getElementById("date").value = dateDuJour();
+    });
+  
+    // Reconstruit la liste affichée à partir du tableau
+    function afficherListe() {
+      liste.innerHTML = "";                  // on efface l'ancienne liste
+      for (const d of depenses) {            // pour chaque dépense du tableau...
+        const li = document.createElement("li");   // ...on crée une ligne de liste
+        // textContent insère du texte brut (plus sûr que innerHTML)
+        li.textContent = d.date + " – " + d.categorie + " : " +
+                         d.montant.toFixed(2) + " €" +
+                         (d.note ? " (" + d.note + ")" : "");
+        liste.appendChild(li);               // ...et on l'ajoute à la page
+      }
+    }
+  </script>
+
+  
 </body>
 </html>
