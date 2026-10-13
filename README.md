@@ -2,7 +2,7 @@
 
 Application web de suivi des dépenses mensuelles, pensée pour le téléphone et utilisée à deux en temps réel.
 
-**Application en ligne :** [https://TON-NOM.github.io/budget-app/](https://adogbo.github.io/budget-app/)
+**Application en ligne :** [https://adogbo.github.io/budget-app/](https://adogbo.github.io/budget-app/)
 
 ## Fonctionnalités
 
