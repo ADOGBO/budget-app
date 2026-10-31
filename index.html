@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     BUDGET : suivi des dépenses mensuelles à deux, en temps réel.
-     Version complète : seuils par mois, catégories personnalisables,
-     graphiques, comparaison entre mois, hors ligne, export CSV.
+     BUDGET : suivi des dépenses à deux, en temps réel.
+     Version 2 : périodes définies par les utilisateurs (nom = mois de fin),
+     récapitulatif par mois, seuils par période, catégories personnalisables,
+     graphiques, comparaison, hors ligne, export CSV.
      ========================================================================== -->
 <html lang="fr">
 <head>
@@ -92,7 +93,7 @@
     }
     #erreur-connexion { color: var(--rouge); margin: 12px 0 0; }
 
-    /* ---------- Barre du haut ---------- */
+    /* ---------- Barre du haut et bandeau d'alerte ---------- */
     .barre-utilisateur {
       display: flex;
       justify-content: space-between;
@@ -101,8 +102,16 @@
       font-size: 14px;
     }
     .barre-utilisateur button { margin: 0; }
+    .bandeau {
+      background: #fff4e0;
+      border: 1px solid #f0c987;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      font-size: 14px;
+    }
 
-    /* ---------- Résumé du mois ---------- */
+    /* ---------- Résumé de la période ---------- */
     .hero .gros { font-size: 32px; font-weight: 700; line-height: 1.1; }
     .hero .sous { color: var(--gris); font-size: 14px; margin-top: 4px; }
     .categorie { margin-top: 16px; }
@@ -141,7 +150,7 @@
     .meta { color: var(--gris); font-size: 13px; }
     .vide { color: var(--gris); margin: 0; }
 
-    /* ---------- Réglages repliables (seuils, catégories) ---------- */
+    /* ---------- Réglages repliables (périodes, seuils, catégories) ---------- */
     details {
       background: #fff;
       border: 1px solid var(--ligne);
@@ -164,9 +173,16 @@
     details[open] > summary::after { transform: rotate(180deg); }
     details[open] > summary { border-bottom: 1px solid var(--ligne); }
     .contenu-details { padding: 4px 16px 16px; }
-    .ligne-categorie { padding: 12px 0; border-bottom: 1px solid var(--ligne); }
-    .ligne-categorie:last-of-type { border-bottom: none; }
+    .ligne-categorie, .ligne-periode { padding: 12px 0; border-bottom: 1px solid var(--ligne); }
+    .ligne-categorie:last-of-type, .ligne-periode:last-of-type { border-bottom: none; }
     #info-seuils { color: var(--gris); font-size: 14px; margin: 12px 0 0; }
+
+    /* ---------- Récapitulatif par mois (lignes repliables plus légères) ---------- */
+    details.recap-periode { border: none; border-bottom: 1px solid var(--ligne); border-radius: 0; margin-top: 0; }
+    details.recap-periode > summary { min-height: 0; padding: 12px 0; font-size: 16px; font-weight: 400; border-bottom: none; }
+    .recap-resume { flex: 1; padding-right: 12px; }
+    .recap-contenu { padding: 0 0 12px; }
+    .recap-contenu .ligne-cat { margin-top: 6px; font-size: 14px; }
   </style>
 </head>
 
@@ -201,6 +217,12 @@
       <button id="btn-deconnexion" class="petit secondaire">Se déconnecter</button>
     </div>
 
+    <!-- Rappel : s'affiche quand la période en cours aurait dû se terminer -->
+    <div id="bandeau-periode" class="bandeau" hidden>
+      <span id="texte-bandeau"></span><br>
+      <button id="btn-bandeau" class="petit">Définir la nouvelle période</button>
+    </div>
+
     <!-- Saisie d'une dépense -->
     <section class="carte">
       <h2>Nouvelle dépense</h2>
@@ -224,14 +246,21 @@
       </form>
     </section>
 
-    <!-- Choix du mois : tout ce qui suit se rapporte à ce mois -->
+    <!-- Choix de la période : tout ce qui suit se rapporte à cette période -->
     <section class="carte">
-      <label for="mois">Mois affiché</label>
-      <input type="month" id="mois">
+      <label for="periode">Période affichée</label>
+      <select id="periode"></select>
+      <button id="btn-recap" class="secondaire">📊 Récapitulatif par mois</button>
+    </section>
+
+    <!-- Récapitulatif de toutes les périodes (affiché par le bouton ci-dessus) -->
+    <section class="carte" id="section-recap" hidden>
+      <h2>Récapitulatif par mois</h2>
+      <div id="recap"></div>
     </section>
 
     <section class="carte">
-      <h2>Résumé du mois</h2>
+      <h2>Résumé de la période</h2>
       <div id="resume"></div>
     </section>
 
@@ -246,7 +275,7 @@
     </section>
 
     <section class="carte">
-      <h2>Comparaison avec le mois précédent</h2>
+      <h2>Comparaison avec la période précédente</h2>
       <div id="comparaison"></div>
     </section>
 
@@ -261,14 +290,28 @@
     </section>
 
     <!-- Réglages repliables -->
+    <details id="details-periodes">
+      <summary>📅 Périodes</summary>
+      <div class="contenu-details">
+        <p id="info-periodes" class="note"></p>
+        <form id="form-periode">
+          <label for="debut-periode">Début de la nouvelle période</label>
+          <input type="date" id="debut-periode">
+          <button type="submit">Démarrer cette période</button>
+        </form>
+        <p class="note">Débuts de période déjà définis :</p>
+        <div id="liste-periodes"></div>
+      </div>
+    </details>
+
     <details>
-      <summary>🎯 Seuils du mois affiché (€)</summary>
+      <summary>🎯 Seuils de la période affichée (€)</summary>
       <div class="contenu-details">
         <form id="form-seuils">
           <p id="info-seuils"></p>
           <!-- Les champs sont créés par le script, un par catégorie active -->
           <div id="champs-seuils"></div>
-          <button type="submit">Enregistrer les seuils de ce mois</button>
+          <button type="submit">Enregistrer les seuils de cette période</button>
         </form>
       </div>
     </details>
@@ -332,18 +375,31 @@
     const nomUtilisateur = document.getElementById("nom-utilisateur");
     const btnDeconnexion = document.getElementById("btn-deconnexion");
 
+    const bandeauPeriode = document.getElementById("bandeau-periode");
+    const texteBandeau = document.getElementById("texte-bandeau");
+    const btnBandeau = document.getElementById("btn-bandeau");
+
     const formulaire = document.getElementById("form-depense");
     const selectCategorie = document.getElementById("categorie");
     const btnValider = document.getElementById("btn-valider");
     const btnAnnuler = document.getElementById("btn-annuler");
 
-    const champMois = document.getElementById("mois");
+    const selectPeriode = document.getElementById("periode");
+    const btnRecap = document.getElementById("btn-recap");
+    const sectionRecap = document.getElementById("section-recap");
+    const recap = document.getElementById("recap");
     const resume = document.getElementById("resume");
     const graphRepartition = document.getElementById("graph-repartition");
     const graphEvolution = document.getElementById("graph-evolution");
     const comparaison = document.getElementById("comparaison");
     const parJour = document.getElementById("par-jour");
     const liste = document.getElementById("liste");
+
+    const detailsPeriodes = document.getElementById("details-periodes");
+    const infoPeriodes = document.getElementById("info-periodes");
+    const formPeriode = document.getElementById("form-periode");
+    const inputDebutPeriode = document.getElementById("debut-periode");
+    const listePeriodes = document.getElementById("liste-periodes");
 
     const formSeuils = document.getElementById("form-seuils");
     const champsSeuils = document.getElementById("champs-seuils");
@@ -352,7 +408,9 @@
     const formCategorie = document.getElementById("form-categorie");
 
     // ======================================================================
-    // 2) OUTILS : dates, montants, mois
+    // 2) OUTILS : dates, montants
+    // Les dates sont des textes "AAAA-MM-JJ" : l'ordre alphabétique suit l'ordre
+    // des dates, donc on peut les comparer directement ("2026-10-27" > "2026-10-03").
     // ======================================================================
 
     // Date du jour au format AAAA-MM-JJ ("sv-SE" : la Suède écrit ses dates ainsi)
@@ -360,23 +418,40 @@
       return new Date().toLocaleDateString("sv-SE");
     }
 
-    // Mois choisi dans le sélecteur ("AAAA-MM") ; si le champ est vidé : mois en cours
-    function moisAffiche() {
-      return champMois.value || dateDuJour().slice(0, 7);
+    // Transforme un texte AAAA-MM-JJ en date, à midi (évite les décalages d'heure d'été)
+    function dateLocale(iso) {
+      return new Date(iso + "T12:00:00");
     }
 
-    // "2026-01" -> "2025-12"
-    function moisPrecedent(mois) {
+    function versIso(date) {
+      return date.toLocaleDateString("sv-SE");
+    }
+
+    // ajouterJours("2026-10-27", -1) -> "2026-10-26"
+    function ajouterJours(iso, n) {
+      const d = dateLocale(iso);
+      d.setDate(d.getDate() + n);
+      return versIso(d);
+    }
+
+    // Nombre de jours entre deux dates (b - a)
+    function joursEntre(a, b) {
+      return Math.round((dateLocale(b) - dateLocale(a)) / 86400000);
+    }
+
+    // "2026-10-27" -> "2026-11-27" (si le mois suivant est plus court, on prend son dernier jour)
+    function ajouterUnMois(iso) {
+      const [annee, m, j] = iso.split("-").map(Number);
+      const dernierJourDuMoisSuivant = new Date(annee, m + 1, 0).getDate();
+      return versIso(new Date(annee, m, Math.min(j, dernierJourDuMoisSuivant), 12));
+    }
+
+    // "2026-12" -> "2027-01"
+    function moisSuivant(mois) {
       let [annee, m] = mois.split("-").map(Number);
-      m -= 1;
-      if (m === 0) { m = 12; annee -= 1; }
+      m += 1;
+      if (m === 13) { m = 1; annee += 1; }
       return annee + "-" + String(m).padStart(2, "0");
-    }
-
-    // Nombre de jours d'un mois (le jour 0 du mois suivant est le dernier jour de celui-ci)
-    function nombreDeJours(mois) {
-      const [annee, m] = mois.split("-").map(Number);
-      return new Date(annee, m, 0).getDate();
     }
 
     // 12.5 -> "12,50 €"
@@ -388,6 +463,12 @@
     function formatDate(iso) {
       const [annee, m, jour] = iso.split("-");
       return jour + "/" + m + "/" + annee;
+    }
+
+    // "2026-10-12" -> "12/10"
+    function formatCourt(iso) {
+      const [, m, jour] = iso.split("-");
+      return jour + "/" + m;
     }
 
     // "2026-10" -> "octobre 2026" (ou autre format si on passe des options)
@@ -404,17 +485,202 @@
     // ======================================================================
     // 3) ÉTAT DE L'APPLICATION : les données reçues de Firebase
     // ======================================================================
-    let toutesLesDepenses = [];   // toutes les dépenses (tous mois)
-    let tousLesSeuils = {};       // { "2026-10": { idCategorie: seuil, ... }, ... }
-    let seuils = {};              // seuils du mois affiché
+    let toutesLesDepenses = [];   // toutes les dépenses
+    let debutsExplicites = [];    // débuts de période définis par vous, triés : ["2026-10-27", ...]
+    let periodes = [];            // toutes les périodes, calculées à partir des débuts
+    let periodeChoisie = null;    // début de la période choisie dans la liste (null = période en cours)
+    let tousLesSeuils = {};       // { "2026-10-27": { idCategorie: seuil, ... }, ... }
+    let seuils = {};              // seuils de la période affichée
     let depenseEnEdition = null;  // id de la dépense en cours de modification (null = aucune)
 
     let arreterEcoute = null;             // fonctions pour arrêter l'écoute en temps réel
     let arreterEcouteSeuils = null;
     let arreterEcouteCategories = null;
+    let arreterEcoutePeriodes = null;
 
     // ======================================================================
-    // 4) CATÉGORIES PERSONNALISABLES
+    // 4) PÉRIODES
+    // Une période commence à une date choisie par vous et dure jusqu'à la veille
+    // du début suivant. Son NOM est celui du mois où elle se TERMINE :
+    // du 27 octobre au 26 novembre = "novembre".
+    // Avant le premier début défini, les périodes sont les mois civils (1er au dernier jour).
+    // ======================================================================
+
+    function construirePeriodes() {
+      const aujourdhui = dateDuJour();
+      const premier = debutsExplicites[0];            // premier début défini (peut ne pas exister)
+      const debuts = new Set(debutsExplicites);
+
+      // Mois civils : du mois de la plus ancienne dépense jusqu'au premier début défini
+      // (ou, s'il n'y en a aucun, jusqu'au mois en cours ou au mois de la dernière dépense)
+      let moisDepart = aujourdhui.slice(0, 7);
+      let moisLimite = aujourdhui.slice(0, 7);
+      for (const d of toutesLesDepenses) {
+        const m = d.date.slice(0, 7);
+        if (m < moisDepart) moisDepart = m;
+        if (!premier && m > moisLimite) moisLimite = m;
+      }
+      if (premier) moisLimite = premier.slice(0, 7);
+      for (let m = moisDepart; m <= moisLimite; m = moisSuivant(m)) {
+        const debut = m + "-01";
+        if (!premier || debut < premier) debuts.add(debut);
+      }
+
+      const tries = Array.from(debuts).sort();
+      return tries.map(function (debut, i) {
+        const suivant = tries[i + 1];
+        const fin = suivant ? ajouterJours(suivant, -1) : null;             // null = période ouverte
+        const finPrevue = fin || ajouterJours(ajouterUnMois(debut), -1);    // un mois plus tard, moins un jour
+        return {
+          debut: debut,
+          fin: fin,
+          finPrevue: finPrevue,
+          ouverte: fin === null,
+          moisFin: finPrevue.slice(0, 7)          // sert à nommer la période
+        };
+      });
+    }
+
+    // Nom d'une période : "novembre 2026"
+    function libellePeriode(p) {
+      return libelleMois(p.moisFin);
+    }
+
+    // Vrai si la dépense d appartient à la période p
+    function depenseDans(d, p) {
+      return d.date >= p.debut && (p.fin === null || d.date <= p.fin);
+    }
+
+    // La période qui contient aujourd'hui (sinon la dernière)
+    function periodeDuJour() {
+      const aujourdhui = dateDuJour();
+      const trouvee = periodes.find(function (p) {
+        return aujourdhui >= p.debut && (p.fin === null || aujourdhui <= p.fin);
+      });
+      return trouvee || periodes[periodes.length - 1];
+    }
+
+    // La période actuellement affichée
+    function periodeAffichee() {
+      if (periodes.length === 0) periodes = construirePeriodes();
+      const choisie = periodes.find(function (p) { return p.debut === periodeChoisie; });
+      return choisie || periodeDuJour();
+    }
+
+    // Remplit la liste déroulante des périodes (la plus récente en premier)
+    function remplirSelectPeriodes() {
+      const courante = periodeDuJour();
+      const affichee = periodeAffichee();
+      selectPeriode.innerHTML = "";
+      for (const p of periodes.slice().reverse()) {
+        const texte = libellePeriode(p) + " (" + formatCourt(p.debut) + " – " + formatCourt(p.finPrevue) + ")" +
+                      (p.debut === courante.debut ? " – en cours" : "");
+        selectPeriode.add(new Option(texte, p.debut));
+      }
+      selectPeriode.value = affichee.debut;
+    }
+
+    selectPeriode.addEventListener("change", function () {
+      periodeChoisie = selectPeriode.value;
+      afficherTout();
+    });
+
+    // Texte d'information et liste des débuts de période définis (réglage "Périodes")
+    function afficherInfoPeriodes() {
+      const courante = periodeDuJour();
+      if (debutsExplicites.length === 0) {
+        infoPeriodes.textContent = "Aucun début de période défini : les périodes suivent les mois civils " +
+          "(du 1er au dernier jour du mois). Indique ci-dessous la date de début de la période en cours.";
+      } else {
+        infoPeriodes.textContent = "Période en cours : " + libellePeriode(courante) + ", du " +
+          formatDate(courante.debut) + " au " + formatDate(courante.finPrevue) +
+          (courante.ouverte ? " (fin prévue)" : "") + ".";
+      }
+
+      listePeriodes.innerHTML = "";
+      if (debutsExplicites.length === 0) {
+        const vide = document.createElement("p");
+        vide.className = "vide";
+        vide.textContent = "Aucun.";
+        listePeriodes.appendChild(vide);
+      }
+      for (const debut of debutsExplicites.slice().reverse()) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-periode";
+
+        const texte = document.createElement("strong");
+        texte.textContent = "Début le " + formatDate(debut);
+        ligne.appendChild(texte);
+        ligne.appendChild(document.createElement("br"));
+
+        // Supprimer un début : la période est alors rattachée à la précédente
+        const btnSupprimer = document.createElement("button");
+        btnSupprimer.textContent = "Supprimer";
+        btnSupprimer.className = "petit danger";
+        btnSupprimer.addEventListener("click", function () {
+          if (!confirm("Supprimer ce début de période ? Ses dépenses seront rattachées à la période précédente.")) return;
+          deleteDoc(doc(db, "periodes", debut))
+            .catch(function (erreur) { alert("Erreur : " + erreur.message); });
+        });
+        ligne.appendChild(btnSupprimer);
+        listePeriodes.appendChild(ligne);
+      }
+    }
+
+    // Rappel quand la période en cours aurait dû se terminer
+    function afficherBandeau() {
+      const courante = periodeDuJour();
+      const enRetard = debutsExplicites.length > 0 && courante.ouverte && dateDuJour() > courante.finPrevue;
+      bandeauPeriode.hidden = !enRetard;
+      if (enRetard) {
+        texteBandeau.textContent = "La période « " + libellePeriode(courante) + " » devait se terminer le " +
+          formatDate(courante.finPrevue) + ". Définis le début de la suivante dès que tu connais la date.";
+      }
+    }
+
+    btnBandeau.addEventListener("click", function () {
+      detailsPeriodes.open = true;                       // ouvre le réglage "Périodes"
+      inputDebutPeriode.scrollIntoView({ behavior: "smooth", block: "center" });
+      inputDebutPeriode.focus();
+    });
+
+    // Définir le début d'une nouvelle période
+    inputDebutPeriode.value = dateDuJour();
+    formPeriode.addEventListener("submit", function (event) {
+      event.preventDefault();
+      const debut = inputDebutPeriode.value;
+      if (!debut) { alert("Choisis une date."); return; }
+      if (debutsExplicites.includes(debut)) { alert("Une période commence déjà à cette date."); return; }
+
+      const dernier = debutsExplicites[debutsExplicites.length - 1];
+      if (dernier && debut < dernier &&
+          !confirm("Cette date est antérieure au dernier début défini (" + formatDate(dernier) +
+                   "). Elle va découper une période existante. Continuer ?")) {
+        return;
+      }
+
+      // L'identifiant du document est la date de début elle-même
+      setDoc(doc(db, "periodes", debut), { debut: debut, creePar: nomCourt(auth.currentUser) })
+        .catch(function (erreur) { alert("Erreur : " + erreur.message); });
+      periodeChoisie = null;                  // on revient à la période en cours
+    });
+
+    // Écoute en temps réel des débuts de période
+    function demarrerEcoutePeriodes() {
+      arreterEcoutePeriodes = onSnapshot(
+        collection(db, "periodes"),
+        function (snapshot) {
+          debutsExplicites = [];
+          snapshot.forEach(function (ligneDoc) { debutsExplicites.push(ligneDoc.id); });
+          debutsExplicites.sort();
+          afficherTout();
+        },
+        function (erreur) { console.error("Erreur (périodes) :", erreur); }
+      );
+    }
+
+    // ======================================================================
+    // 5) CATÉGORIES PERSONNALISABLES
     // Chaque catégorie : un id stable, un nom affiché, un indicateur "archivée".
     // Les dépenses et les seuils sont rattachés à l'id : renommer une catégorie
     // ne touche donc à aucune ancienne dépense.
@@ -562,20 +828,21 @@
     }
 
     // ======================================================================
-    // 5) SEUILS PAR MOIS
-    // Un document par mois dans la collection "seuils" ; son identifiant est le mois.
+    // 6) SEUILS PAR PÉRIODE
+    // Un document par période dans la collection "seuils" ; son identifiant est
+    // la date de début de la période. Les anciens documents (identifiant "AAAA-MM",
+    // créés quand on raisonnait par mois) restent lus : "2026-09" vaut "2026-09-01".
     // ======================================================================
 
-    // Trouve les seuils à utiliser pour un mois donné
-    function seuilsEffectifs(mois) {
-      // Cas 1 : le mois a ses propres seuils
-      if (tousLesSeuils[mois]) {
-        return { valeurs: tousLesSeuils[mois], source: mois };
+    // Trouve les seuils à utiliser pour une période (identifiée par sa date de début)
+    function seuilsEffectifs(debut) {
+      // Cas 1 : la période a ses propres seuils
+      if (tousLesSeuils[debut]) {
+        return { valeurs: tousLesSeuils[debut], source: debut };
       }
-      // Cas 2 : on cherche le mois PLUS ANCIEN le plus proche qui a des seuils.
-      // Comparer "2026-09" < "2026-10" fonctionne : l'ordre alphabétique suit l'ordre des dates.
+      // Cas 2 : on reprend ceux de la période PLUS ANCIENNE la plus proche qui en a
       const anterieurs = Object.keys(tousLesSeuils)
-        .filter(function (m) { return m < mois; })
+        .filter(function (k) { return k < debut; })
         .sort();
       if (anterieurs.length > 0) {
         const source = anterieurs[anterieurs.length - 1];
@@ -587,17 +854,18 @@
 
     // Met à jour les seuils actifs, le texte d'information et les champs du formulaire
     function majSeuils() {
-      const mois = moisAffiche();
-      const effectifs = seuilsEffectifs(mois);
+      const p = periodeAffichee();
+      const effectifs = seuilsEffectifs(p.debut);
       seuils = effectifs.valeurs;
 
-      if (effectifs.source === mois) {
-        infoSeuils.textContent = "Seuils enregistrés pour " + libelleMois(mois) + ".";
+      if (effectifs.source === p.debut) {
+        infoSeuils.textContent = "Seuils enregistrés pour la période « " + libellePeriode(p) + " ».";
       } else if (effectifs.source) {
-        infoSeuils.textContent = "Aucun seuil enregistré pour " + libelleMois(mois) + " : ceux de " +
-          libelleMois(effectifs.source) + " sont repris. Enregistre pour les fixer pour ce mois.";
+        infoSeuils.textContent = "Aucun seuil enregistré pour « " + libellePeriode(p) +
+          " » : ceux de la période commencée le " + formatDate(effectifs.source) +
+          " sont repris. Enregistre pour les fixer pour cette période.";
       } else {
-        infoSeuils.textContent = "Aucun seuil défini pour " + libelleMois(mois) + ".";
+        infoSeuils.textContent = "Aucun seuil défini pour « " + libellePeriode(p) + " ».";
       }
 
       // On ne remplit pas les champs si quelqu'un est en train de les modifier
@@ -608,7 +876,7 @@
       }
     }
 
-    // Enregistrement : les seuils sont écrits dans le document du MOIS AFFICHÉ
+    // Enregistrement : les seuils sont écrits dans le document de la PÉRIODE AFFICHÉE
     formSeuils.addEventListener("submit", async function (event) {
       event.preventDefault();
 
@@ -617,25 +885,32 @@
         nouveauxSeuils[champ.dataset.categorie] = parseFloat(champ.value) || 0;
       }
 
-      const mois = moisAffiche();
+      const p = periodeAffichee();
       try {
         // merge : on conserve le seuil d'une éventuelle catégorie archivée
-        await setDoc(doc(db, "seuils", mois), nouveauxSeuils, { merge: true });
-        alert("Seuils enregistrés pour " + libelleMois(mois) + ".");
+        await setDoc(doc(db, "seuils", p.debut), nouveauxSeuils, { merge: true });
+        alert("Seuils enregistrés pour « " + libellePeriode(p) + " ».");
       } catch (erreur) {
         alert("Erreur : " + erreur.message);
       }
     });
 
-    // Écoute en temps réel de TOUTE la collection des seuils (un document par mois)
+    // Écoute en temps réel de TOUTE la collection des seuils
     function demarrerEcouteSeuils() {
       arreterEcouteSeuils = onSnapshot(
         collection(db, "seuils"),
         function (snapshot) {
+          // On normalise les identifiants : "2026-09" devient "2026-09-01".
+          // Si les deux existent, celui qui a la date complète l'emporte.
+          const documents = [];
+          snapshot.forEach(function (ligneDoc) { documents.push(ligneDoc); });
+          documents.sort(function (a, b) { return a.id.length - b.id.length; });
+
           tousLesSeuils = {};
-          snapshot.forEach(function (ligneDoc) {
-            tousLesSeuils[ligneDoc.id] = ligneDoc.data();   // l'id du document = le mois
-          });
+          for (const ligneDoc of documents) {
+            const cle = ligneDoc.id.length === 7 ? ligneDoc.id + "-01" : ligneDoc.id;
+            tousLesSeuils[cle] = ligneDoc.data();
+          }
           afficherTout();
         },
         function (erreur) { console.error("Erreur (seuils) :", erreur); }
@@ -643,7 +918,7 @@
     }
 
     // ======================================================================
-    // 6) CONNEXION ET DÉCONNEXION
+    // 7) CONNEXION ET DÉCONNEXION
     // ======================================================================
     formConnexion.addEventListener("submit", async function (event) {
       event.preventDefault();
@@ -665,7 +940,7 @@
     });
 
     // ======================================================================
-    // 7) SAISIE, MODIFICATION ET SUPPRESSION D'UNE DÉPENSE
+    // 8) SAISIE, MODIFICATION ET SUPPRESSION D'UNE DÉPENSE
     // ======================================================================
     document.getElementById("date").value = dateDuJour();
 
@@ -747,22 +1022,22 @@
     }
 
     // ======================================================================
-    // 8) CALCULS COMMUNS
+    // 9) CALCULS COMMUNS
     // ======================================================================
 
-    // Total dépensé par catégorie pour un mois : { idCategorie: total }
-    // jourMax (facultatif) : on ne compte que les dépenses du 1er au jour "jourMax"
-    function totauxParCategorie(mois, jourMax) {
+    // Total dépensé par catégorie pour une période : { idCategorie: total }
+    // dateMax (facultatif) : on ne compte que les dépenses jusqu'à cette date incluse
+    function totauxParCategorie(p, dateMax) {
       const totaux = {};
       for (const d of toutesLesDepenses) {
-        if (!d.date.startsWith(mois)) continue;
-        if (jourMax && Number(d.date.slice(8, 10)) > jourMax) continue;
+        if (!depenseDans(d, p)) continue;
+        if (dateMax && d.date > dateMax) continue;
         totaux[d.categorie] = (totaux[d.categorie] || 0) + d.montant;
       }
       return totaux;
     }
 
-    // Catégories à montrer pour un mois : les actives, plus les archivées qui ont des dépenses
+    // Catégories à montrer : les actives, plus les archivées qui ont des dépenses
     function categoriesDuMois(totaux) {
       const visibles = categories.filter(function (cat) {
         return !cat.archivee || (totaux[cat.id] || 0) > 0;
@@ -797,12 +1072,24 @@
       return el;
     }
 
+    // Un paragraphe "Aucune ..." à afficher quand il n'y a rien à montrer
+    function messageVide(conteneur, texte) {
+      const vide = document.createElement("p");
+      vide.className = "vide";
+      vide.textContent = texte;
+      conteneur.appendChild(vide);
+    }
+
     // ======================================================================
-    // 9) AFFICHAGES
+    // 10) AFFICHAGES
     // ======================================================================
 
-    // Appelle tous les affichages d'un coup (à chaque changement de données ou de mois)
+    // Recalcule et réaffiche tout (à chaque changement de données ou de période)
     function afficherTout() {
+      periodes = construirePeriodes();
+      remplirSelectPeriodes();
+      afficherInfoPeriodes();
+      afficherBandeau();
       majSeuils();
       afficherListe();
       afficherResume();
@@ -810,43 +1097,42 @@
       afficherEvolution();
       afficherComparaison();
       afficherParJour();
+      afficherRecap();
     }
-    champMois.value = dateDuJour().slice(0, 7);          // par défaut : le mois en cours
-    champMois.addEventListener("change", afficherTout);  // changer de mois réaffiche tout
 
-    // ---- Résumé du mois : total général puis une ligne par catégorie ----
+    // ---- Résumé de la période : total général puis une ligne par catégorie ----
     function afficherResume() {
-      const mois = moisAffiche();
-      const totaux = totauxParCategorie(mois);
+      const p = periodeAffichee();
+      const totaux = totauxParCategorie(p);
       const visibles = categoriesDuMois(totaux);
       resume.innerHTML = "";
 
-      let totalMois = 0;
+      let totalPeriode = 0;
       let budget = 0;
       for (const cat of visibles) {
-        totalMois += totaux[cat.id] || 0;
+        totalPeriode += totaux[cat.id] || 0;
         budget += seuils[cat.id] || 0;
       }
 
-      // En-tête : le total du mois en grand
+      // En-tête : le total en grand
       const hero = document.createElement("div");
       hero.className = "hero";
       const gros = document.createElement("div");
       gros.className = "gros";
-      gros.textContent = formatEuro(totalMois);
+      gros.textContent = formatEuro(totalPeriode);
       hero.appendChild(gros);
 
       const sous = document.createElement("div");
       sous.className = "sous";
       if (budget > 0) {
-        const reste = budget - totalMois;
+        const reste = budget - totalPeriode;
         sous.textContent = "dépensés sur " + formatEuro(budget) + " – " +
           (reste >= 0 ? "il reste " + formatEuro(reste) : "dépassement de " + formatEuro(-reste));
       } else {
-        sous.textContent = "dépensés en " + libelleMois(mois) + " (aucun seuil défini)";
+        sous.textContent = "dépensés en " + libellePeriode(p) + " (aucun seuil défini)";
       }
       hero.appendChild(sous);
-      if (budget > 0) hero.appendChild(creerBarre((totalMois / budget) * 100));
+      if (budget > 0) hero.appendChild(creerBarre((totalPeriode / budget) * 100));
       resume.appendChild(hero);
 
       // Une ligne par catégorie
@@ -880,29 +1166,127 @@
       }
     }
 
-    // ---- Graphique A1 : répartition par catégorie (anneau) ----
+    // ---- Récapitulatif par mois : toutes les périodes, de la plus récente à la plus ancienne ----
+    function afficherRecap() {
+      recap.innerHTML = "";
+      if (sectionRecap.hidden) return;          // inutile de calculer si la section est masquée
+
+      const aujourdhui = dateDuJour();
+      const courante = periodeDuJour();
+      const lignes = [];
+
+      for (const p of periodes.slice().reverse()) {
+        const totaux = totauxParCategorie(p);
+        const valeursSeuils = seuilsEffectifs(p.debut).valeurs;   // les seuils de CETTE période
+        const visibles = categoriesDuMois(totaux);
+        let total = 0;
+        let budget = 0;
+        for (const cat of visibles) {
+          total += totaux[cat.id] || 0;
+          budget += valeursSeuils[cat.id] || 0;
+        }
+        // On saute les périodes vides (sauf la période en cours)
+        if (total === 0 && p.debut !== courante.debut) continue;
+        lignes.push({ p: p, totaux: totaux, valeursSeuils: valeursSeuils, visibles: visibles, total: total, budget: budget });
+      }
+
+      if (lignes.length === 0) {
+        messageVide(recap, "Aucune dépense enregistrée.");
+        return;
+      }
+
+      // Moyenne des périodes terminées
+      const terminees = lignes.filter(function (l) { return l.p.fin !== null && l.p.fin < aujourdhui && l.total > 0; });
+      if (terminees.length > 0) {
+        let somme = 0;
+        for (const l of terminees) somme += l.total;
+        const moyenne = document.createElement("p");
+        moyenne.className = "note";
+        moyenne.textContent = "Dépense moyenne des périodes terminées : " + formatEuro(somme / terminees.length) +
+          " (sur " + terminees.length + ").";
+        moyenne.style.marginTop = "0";
+        recap.appendChild(moyenne);
+      }
+
+      for (const l of lignes) {
+        const details = document.createElement("details");
+        details.className = "recap-periode";
+
+        const summary = document.createElement("summary");
+        const bloc = document.createElement("div");
+        bloc.className = "recap-resume";
+
+        const ligne1 = document.createElement("div");
+        ligne1.className = "ligne-cat";
+        const nom = document.createElement("strong");
+        nom.textContent = libellePeriode(l.p);
+        const total = document.createElement("strong");
+        total.textContent = formatEuro(l.total);
+        ligne1.appendChild(nom);
+        ligne1.appendChild(total);
+        bloc.appendChild(ligne1);
+
+        const ligne2 = document.createElement("div");
+        ligne2.className = "detail-cat";
+        ligne2.textContent = "du " + formatDate(l.p.debut) + " au " + formatDate(l.p.finPrevue) +
+          (l.p.ouverte ? " (prévu)" : "") +
+          (l.budget > 0 ? " – budget " + formatEuro(l.budget) : "");
+        bloc.appendChild(ligne2);
+        if (l.budget > 0) bloc.appendChild(creerBarre((l.total / l.budget) * 100));
+        summary.appendChild(bloc);
+        details.appendChild(summary);
+
+        // Détail par catégorie, visible quand on déplie la ligne
+        const contenu = document.createElement("div");
+        contenu.className = "recap-contenu";
+        for (const cat of l.visibles) {
+          const t = l.totaux[cat.id] || 0;
+          const s = l.valeursSeuils[cat.id] || 0;
+          if (t === 0 && s === 0) continue;
+          const ligne = document.createElement("div");
+          ligne.className = "ligne-cat";
+          const gauche = document.createElement("span");
+          gauche.textContent = cat.nom;
+          const droite = document.createElement("span");
+          droite.textContent = formatEuro(t) + (s > 0 ? " / " + formatEuro(s) : "");
+          if (s > 0 && t > s) droite.className = "hausse";   // dépassement en rouge
+          ligne.appendChild(gauche);
+          ligne.appendChild(droite);
+          contenu.appendChild(ligne);
+        }
+        details.appendChild(contenu);
+        recap.appendChild(details);
+      }
+    }
+
+    // Le bouton affiche ou masque le récapitulatif
+    btnRecap.addEventListener("click", function () {
+      sectionRecap.hidden = !sectionRecap.hidden;
+      btnRecap.textContent = sectionRecap.hidden ? "📊 Récapitulatif par mois" : "Masquer le récapitulatif";
+      afficherRecap();
+      if (!sectionRecap.hidden) sectionRecap.scrollIntoView({ behavior: "smooth" });
+    });
+
+    // ---- Graphique 1 : répartition par catégorie (anneau) ----
     const COULEURS = ["#2468c9", "#1f9d55", "#e08a00", "#8e44ad", "#c8372d", "#16a085", "#d35400", "#34495e"];
 
     function afficherRepartition() {
       graphRepartition.innerHTML = "";
-      const totaux = totauxParCategorie(moisAffiche());
+      const totaux = totauxParCategorie(periodeAffichee());
 
       // On ne garde que les catégories qui ont des dépenses
       const parts = [];
-      let totalMois = 0;
+      let totalPeriode = 0;
       for (const cat of categoriesDuMois(totaux)) {
         const total = totaux[cat.id] || 0;
         if (total > 0) {
           parts.push({ nom: cat.nom, total: total });
-          totalMois += total;
+          totalPeriode += total;
         }
       }
 
-      if (totalMois === 0) {
-        const vide = document.createElement("p");
-        vide.className = "vide";
-        vide.textContent = "Aucune dépense ce mois-ci.";
-        graphRepartition.appendChild(vide);
+      if (totalPeriode === 0) {
+        messageVide(graphRepartition, "Aucune dépense sur cette période.");
         return;
       }
 
@@ -914,7 +1298,7 @@
       let decalage = 0;   // où commence la part suivante
 
       parts.forEach(function (part, i) {
-        const longueur = (part.total / totalMois) * circonference;
+        const longueur = (part.total / totalPeriode) * circonference;
         svg.appendChild(elementSvg("circle", {
           cx: 60, cy: 60, r: rayon,
           fill: "none",
@@ -931,7 +1315,7 @@
       const titre = elementSvg("text", { x: 60, y: 56, "text-anchor": "middle", "font-size": 8, fill: "#66727f" });
       titre.textContent = "Total";
       const montant = elementSvg("text", { x: 60, y: 68, "text-anchor": "middle", "font-size": 9.5, "font-weight": 700, fill: "#1c2b3a" });
-      montant.textContent = formatEuro(totalMois);
+      montant.textContent = formatEuro(totalPeriode);
       svg.appendChild(titre);
       svg.appendChild(montant);
       graphRepartition.appendChild(svg);
@@ -952,7 +1336,7 @@
 
         const valeur = document.createElement("span");
         valeur.className = "valeur";
-        valeur.textContent = formatEuro(part.total) + " (" + Math.round((part.total / totalMois) * 100) + " %)";
+        valeur.textContent = formatEuro(part.total) + " (" + Math.round((part.total / totalPeriode) * 100) + " %)";
 
         ligne.appendChild(pastille);
         ligne.appendChild(nom);
@@ -962,24 +1346,31 @@
       graphRepartition.appendChild(legende);
     }
 
-    // ---- Graphique A2 : évolution cumulée des dépenses au fil du mois ----
+    // ---- Graphique 2 : évolution cumulée des dépenses au fil de la période ----
     function afficherEvolution() {
       graphEvolution.innerHTML = "";
-      const mois = moisAffiche();
-      const nbJours = nombreDeJours(mois);
+      const p = periodeAffichee();
       const aujourdhui = dateDuJour();
 
-      // On trace jusqu'à aujourd'hui pour le mois en cours, jusqu'à la fin du mois sinon
-      const dernierJour = (mois === aujourdhui.slice(0, 7)) ? Number(aujourdhui.slice(8, 10)) : nbJours;
+      // Dernier jour du dessin : la fin de la période (ou aujourd'hui si la période ouverte est dépassée)
+      const finAffichee = p.fin || (aujourdhui > p.finPrevue ? aujourdhui : p.finPrevue);
+      const nbJours = joursEntre(p.debut, finAffichee) + 1;
 
-      // Total de chaque jour (tableau indexé par le numéro du jour, de 1 à nbJours)
+      // Jusqu'où tracer la courbe : jusqu'à aujourd'hui pour la période en cours
+      let dernierJour;
+      if (aujourdhui < p.debut) dernierJour = 0;
+      else if (aujourdhui > finAffichee) dernierJour = nbJours;
+      else dernierJour = joursEntre(p.debut, aujourdhui) + 1;
+
+      // Total de chaque jour (tableau indexé par le numéro du jour dans la période, de 1 à nbJours)
       const parJourTab = new Array(nbJours + 1).fill(0);
       for (const d of toutesLesDepenses) {
-        if (!d.date.startsWith(mois)) continue;
-        parJourTab[Number(d.date.slice(8, 10))] += d.montant;
+        if (!depenseDans(d, p)) continue;
+        const numero = joursEntre(p.debut, d.date) + 1;
+        if (numero >= 1 && numero <= nbJours) parJourTab[numero] += d.montant;
       }
 
-      // Cumul : la dépense totale depuis le début du mois, jour après jour
+      // Cumul : la dépense totale depuis le début de la période, jour après jour
       const cumul = [];
       let somme = 0;
       for (let j = 1; j <= dernierJour; j++) {
@@ -988,15 +1379,12 @@
       }
 
       if (somme === 0) {
-        const vide = document.createElement("p");
-        vide.className = "vide";
-        vide.textContent = "Aucune dépense ce mois-ci.";
-        graphEvolution.appendChild(vide);
+        messageVide(graphEvolution, "Aucune dépense sur cette période.");
         return;
       }
 
-      // Budget total du mois = somme des seuils des catégories affichées
-      const totaux = totauxParCategorie(mois);
+      // Budget total = somme des seuils des catégories affichées
+      const totaux = totauxParCategorie(p);
       let budget = 0;
       for (const cat of categoriesDuMois(totaux)) budget += seuils[cat.id] || 0;
 
@@ -1044,7 +1432,7 @@
       etiquetteFin.textContent = formatEuro(somme);
       svg.appendChild(etiquetteFin);
 
-      // Graduations : 0 et maximum à gauche ; jours 1, milieu et fin en bas
+      // Graduations : 0 et maximum à gauche ; dates de début, milieu et fin en bas
       const zero = elementSvg("text", { x: margeGauche - 6, y: Y(0) + 3, "text-anchor": "end", "font-size": 9, fill: "#66727f" });
       zero.textContent = "0";
       const haut = elementSvg("text", { x: margeGauche - 6, y: Y(ymax) + 3, "text-anchor": "end", "font-size": 9, fill: "#66727f" });
@@ -1052,31 +1440,38 @@
       svg.appendChild(zero);
       svg.appendChild(haut);
 
-      const joursAffiches = [1, Math.round((nbJours + 1) / 2), nbJours];
-      for (const j of joursAffiches) {
+      const milieu = Math.round((nbJours + 1) / 2);
+      for (const j of [1, milieu, nbJours]) {
         const t = elementSvg("text", { x: X(j), y: H - 8, "text-anchor": "middle", "font-size": 9, fill: "#66727f" });
-        t.textContent = j;
+        t.textContent = formatCourt(ajouterJours(p.debut, j - 1));
         svg.appendChild(t);
       }
       graphEvolution.appendChild(svg);
     }
 
-    // ---- Comparaison B : le mois affiché contre le mois précédent ----
+    // ---- Comparaison : la période affichée contre la période précédente ----
     function afficherComparaison() {
       comparaison.innerHTML = "";
-      const mois = moisAffiche();
-      const precedent = moisPrecedent(mois);
+      const p = periodeAffichee();
+      const i = periodes.findIndex(function (q) { return q.debut === p.debut; });
+      const precedent = i > 0 ? periodes[i - 1] : null;
+
+      if (!precedent) {
+        messageVide(comparaison, "Pas de période précédente à comparer.");
+        return;
+      }
+
+      // Pour la période en cours, on compare "à durée égale" : les mêmes premiers jours de chaque période,
+      // sinon on comparerait une période incomplète à une période entière.
       const aujourdhui = dateDuJour();
+      const enCours = (p.debut === periodeDuJour().debut) && aujourdhui <= (p.fin || p.finPrevue);
+      const joursEcoules = enCours ? joursEntre(p.debut, aujourdhui) + 1 : 0;
+      const dateMaxPrecedent = enCours ? ajouterJours(precedent.debut, joursEcoules - 1) : null;
 
-      // Pour le mois en cours, on compare "à date égale" : du 1er au jour d'aujourd'hui,
-      // sinon on comparerait un mois incomplet à un mois entier.
-      const enCours = (mois === aujourdhui.slice(0, 7));
-      const jourLimite = enCours ? Number(aujourdhui.slice(8, 10)) : 0;   // 0 = pas de limite
+      const actuel = totauxParCategorie(p);
+      const avant = totauxParCategorie(precedent, dateMaxPrecedent);
 
-      const actuel = totauxParCategorie(mois);
-      const avant = totauxParCategorie(precedent, jourLimite);
-
-      // Les lignes du tableau : catégories (actives ou non) ayant des dépenses dans l'un des deux mois
+      // Les lignes du tableau : catégories (actives ou non) ayant des dépenses dans l'une des deux périodes
       const lignes = [];
       for (const cat of categories) {
         if ((actuel[cat.id] || 0) > 0 || (avant[cat.id] || 0) > 0) {
@@ -1092,10 +1487,7 @@
       }
 
       if (lignes.length === 0) {
-        const vide = document.createElement("p");
-        vide.className = "vide";
-        vide.textContent = "Aucune dépense à comparer.";
-        comparaison.appendChild(vide);
+        messageVide(comparaison, "Aucune dépense à comparer.");
         return;
       }
 
@@ -1110,13 +1502,13 @@
         return texte;
       }
 
-      const court = { month: "short", year: "2-digit" };   // ex. "oct. 26"
+      const court = { month: "short", year: "2-digit" };   // ex. "nov. 26"
       const tableau = document.createElement("table");
       tableau.className = "tableau";
 
-      // En-tête
+      // En-tête : les périodes sont nommées par leur mois de fin
       const entete = document.createElement("tr");
-      for (const titre of ["Catégorie", libelleMois(precedent, court), libelleMois(mois, court), "Écart"]) {
+      for (const titre of ["Catégorie", libelleMois(precedent.moisFin, court), libelleMois(p.moisFin, court), "Écart"]) {
         const th = document.createElement("th");
         th.textContent = titre;
         entete.appendChild(th);
@@ -1131,10 +1523,10 @@
         if (estTotal) tr.className = "total";
 
         const cellules = [nom, formatEuro(avantVal), formatEuro(actuelVal), texteEcart(avantVal, actuelVal)];
-        cellules.forEach(function (texte, i) {
+        cellules.forEach(function (texte, k) {
           const td = document.createElement("td");
           td.textContent = texte;
-          if (i === 3 && actuelVal !== avantVal) {
+          if (k === 3 && actuelVal !== avantVal) {
             // Dépenser plus = hausse (rouge) ; dépenser moins = baisse (vert)
             td.className = actuelVal > avantVal ? "hausse" : "baisse";
           }
@@ -1157,30 +1549,28 @@
       if (enCours) {
         const note = document.createElement("p");
         note.className = "note";
-        note.textContent = "Mois en cours : comparaison à date égale (du 1er au " + jourLimite + " de chaque mois).";
+        note.textContent = "Période en cours : comparaison à durée égale (les " + joursEcoules +
+          " premiers jours de chaque période).";
         comparaison.appendChild(note);
       }
     }
 
-    // ---- Total de chaque jour du mois ----
+    // ---- Total de chaque jour de la période ----
     function afficherParJour() {
       parJour.innerHTML = "";
-      const mois = moisAffiche();
+      const p = periodeAffichee();
 
       // totaux associe chaque jour à son total : { "2026-10-12": 34.5, ... }
       const totaux = {};
       for (const d of toutesLesDepenses) {
-        if (!d.date.startsWith(mois)) continue;
+        if (!depenseDans(d, p)) continue;
         totaux[d.date] = (totaux[d.date] || 0) + d.montant;
       }
 
       // Les jours, du plus récent au plus ancien
       const jours = Object.keys(totaux).sort().reverse();
       if (jours.length === 0) {
-        const vide = document.createElement("p");
-        vide.className = "vide";
-        vide.textContent = "Aucune dépense ce mois-ci.";
-        parJour.appendChild(vide);
+        messageVide(parJour, "Aucune dépense sur cette période.");
         return;
       }
 
@@ -1197,15 +1587,15 @@
       }
     }
 
-    // ---- Liste des dépenses du mois, avec boutons Modifier / Supprimer ----
+    // ---- Liste des dépenses de la période, avec boutons Modifier / Supprimer ----
     function afficherListe() {
       liste.innerHTML = "";
-      const mois = moisAffiche();
+      const p = periodeAffichee();
       let nombre = 0;
 
       for (const d of toutesLesDepenses) {
-        // "continue" : cette dépense est d'un autre mois, on passe à la suivante
-        if (!d.date.startsWith(mois)) continue;
+        // "continue" : cette dépense est d'une autre période, on passe à la suivante
+        if (!depenseDans(d, p)) continue;
         nombre++;
 
         const li = document.createElement("li");
@@ -1252,16 +1642,11 @@
         liste.appendChild(li);
       }
 
-      if (nombre === 0) {
-        const vide = document.createElement("p");
-        vide.className = "vide";
-        vide.textContent = "Aucune dépense ce mois-ci.";
-        liste.appendChild(vide);
-      }
+      if (nombre === 0) messageVide(liste, "Aucune dépense sur cette période.");
     }
 
     // ======================================================================
-    // 10) EXPORT CSV (toutes les dépenses, tous les mois)
+    // 11) EXPORT CSV (toutes les dépenses, toutes les périodes)
     // ======================================================================
 
     // Met un texte entre guillemets (et double les guillemets internes) pour ne pas casser le CSV
@@ -1271,10 +1656,12 @@
 
     document.getElementById("btn-export").addEventListener("click", function () {
       // Séparateur ";" et virgule décimale : c'est ce qu'attend Excel en version française
-      const lignes = ["date;categorie;montant;note;saisi_par"];
+      const lignes = ["date;periode;categorie;montant;note;saisi_par"];
       for (const d of toutesLesDepenses) {
+        const p = periodes.find(function (q) { return depenseDans(d, q); });
         lignes.push([
           d.date,
+          entreGuillemets(p ? libellePeriode(p) : ""),
           entreGuillemets(nomCategorie(d.categorie)),
           String(d.montant).replace(".", ","),
           entreGuillemets(d.note || ""),
@@ -1295,7 +1682,7 @@
     });
 
     // ======================================================================
-    // 11) DÉMARRAGE : surveiller l'état de connexion
+    // 12) DÉMARRAGE : surveiller l'état de connexion
     // ======================================================================
     majCategories();   // on remplit déjà la liste avec les catégories par défaut
 
@@ -1309,12 +1696,14 @@
         demarrerEcoute();
         demarrerEcouteSeuils();
         demarrerEcouteCategories();
+        demarrerEcoutePeriodes();
       } else {
         ecranConnexion.hidden = false;
         ecranAppli.hidden = true;
         if (arreterEcoute) { arreterEcoute(); arreterEcoute = null; }
         if (arreterEcouteSeuils) { arreterEcouteSeuils(); arreterEcouteSeuils = null; }
         if (arreterEcouteCategories) { arreterEcouteCategories(); arreterEcouteCategories = null; }
+        if (arreterEcoutePeriodes) { arreterEcoutePeriodes(); arreterEcoutePeriodes = null; }
         liste.innerHTML = "";
       }
     });
