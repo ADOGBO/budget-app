@@ -183,6 +183,14 @@
     .recap-resume { flex: 1; padding-right: 12px; }
     .recap-contenu { padding: 0 0 12px; }
     .recap-contenu .ligne-cat { margin-top: 6px; font-size: 14px; }
+
+    /* ---------- Comparateur de périodes ---------- */
+    .ligne-comparee { display: flex; gap: 8px; align-items: center; }
+    .ligne-comparee select { flex: 1; }
+    .ligne-comparee button { margin: 4px 0 0; }
+    .tableau th small { display: block; font-weight: 400; }
+    .tableau tr.budget td { color: var(--gris); font-size: 13px; }
+    #recap-annuel { margin-bottom: 16px; }
   </style>
 </head>
 
@@ -251,12 +259,23 @@
       <label for="periode">Période affichée</label>
       <select id="periode"></select>
       <button id="btn-recap" class="secondaire">📊 Récapitulatif par mois</button>
+      <button id="btn-comparer" class="secondaire">⚖️ Comparer des périodes</button>
     </section>
 
-    <!-- Récapitulatif de toutes les périodes (affiché par le bouton ci-dessus) -->
+    <!-- Récapitulatif (affiché par le bouton ci-dessus) : un tableau par année,
+         puis le détail d'une seule année à la fois -->
     <section class="carte" id="section-recap" hidden>
       <h2>Récapitulatif par mois</h2>
+      <div id="recap-annuel"></div>
+      <label for="recap-annee">Détail de l'année</label>
+      <select id="recap-annee"></select>
       <div id="recap"></div>
+    </section>
+
+    <!-- Comparateur (affiché par le bouton ci-dessus) : on choisit les périodes à comparer -->
+    <section class="carte" id="section-comparateur" hidden>
+      <h2>Comparer des périodes</h2>
+      <div id="comparateur"></div>
     </section>
 
     <section class="carte">
@@ -388,6 +407,11 @@
     const btnRecap = document.getElementById("btn-recap");
     const sectionRecap = document.getElementById("section-recap");
     const recap = document.getElementById("recap");
+    const recapAnnuel = document.getElementById("recap-annuel");
+    const selectAnneeRecap = document.getElementById("recap-annee");
+    const btnComparer = document.getElementById("btn-comparer");
+    const sectionComparateur = document.getElementById("section-comparateur");
+    const comparateur = document.getElementById("comparateur");
     const resume = document.getElementById("resume");
     const graphRepartition = document.getElementById("graph-repartition");
     const graphEvolution = document.getElementById("graph-evolution");
@@ -1098,6 +1122,7 @@
       afficherComparaison();
       afficherParJour();
       afficherRecap();
+      afficherComparateur();
     }
 
     // ---- Résumé de la période : total général puis une ligne par catégorie ----
@@ -1166,46 +1191,118 @@
       }
     }
 
-    // ---- Récapitulatif par mois : toutes les périodes, de la plus récente à la plus ancienne ----
+    // ---- Chiffres d'une période (utilisés par le récapitulatif et le comparateur) ----
+    function chiffresPeriode(p) {
+      const totaux = totauxParCategorie(p);
+      const valeursSeuils = seuilsEffectifs(p.debut).valeurs;   // les seuils de CETTE période
+      const visibles = categoriesDuMois(totaux);
+      let total = 0;
+      let budget = 0;
+      for (const cat of visibles) {
+        total += totaux[cat.id] || 0;
+        budget += valeursSeuils[cat.id] || 0;
+      }
+      return { p: p, totaux: totaux, valeursSeuils: valeursSeuils, visibles: visibles, total: total, budget: budget };
+    }
+
+    // L'année d'une période est celle de son mois de fin
+    function anneeDe(p) {
+      return p.moisFin.slice(0, 4);
+    }
+
+    // Texte de l'écart entre deux montants : "+12,00 € (+8 %)"
+    function texteEcart(avantVal, actuelVal) {
+      const ecart = actuelVal - avantVal;
+      let texte = (ecart > 0 ? "+" : "") + formatEuro(ecart);
+      if (avantVal > 0) {
+        const pct = Math.round((ecart / avantVal) * 100);
+        texte += " (" + (pct > 0 ? "+" : "") + pct + " %)";
+      }
+      return texte;
+    }
+
+    // ---- Récapitulatif : un tableau par année, puis le détail d'UNE année à la fois ----
+    let anneeRecap = null;     // année affichée en détail
+
+    selectAnneeRecap.addEventListener("change", function () {
+      anneeRecap = selectAnneeRecap.value;
+      afficherRecap();
+    });
+
     function afficherRecap() {
       recap.innerHTML = "";
+      recapAnnuel.innerHTML = "";
       if (sectionRecap.hidden) return;          // inutile de calculer si la section est masquée
 
       const aujourdhui = dateDuJour();
       const courante = periodeDuJour();
-      const lignes = [];
+      const toutes = periodes.map(chiffresPeriode);
 
-      for (const p of periodes.slice().reverse()) {
-        const totaux = totauxParCategorie(p);
-        const valeursSeuils = seuilsEffectifs(p.debut).valeurs;   // les seuils de CETTE période
-        const visibles = categoriesDuMois(totaux);
-        let total = 0;
-        let budget = 0;
-        for (const cat of visibles) {
-          total += totaux[cat.id] || 0;
-          budget += valeursSeuils[cat.id] || 0;
-        }
-        // On saute les périodes vides (sauf la période en cours)
-        if (total === 0 && p.debut !== courante.debut) continue;
-        lignes.push({ p: p, totaux: totaux, valeursSeuils: valeursSeuils, visibles: visibles, total: total, budget: budget });
+      // Les années présentes, de la plus récente à la plus ancienne
+      const annees = Array.from(new Set(periodes.map(anneeDe))).sort().reverse();
+      if (!annees.includes(anneeRecap)) {
+        anneeRecap = annees.includes(anneeDe(courante)) ? anneeDe(courante) : annees[0];
       }
+
+      // 1) Le tableau par année : quelques lignes seulement, même après des années d'utilisation
+      const tableau = document.createElement("table");
+      tableau.className = "tableau";
+      const entete = document.createElement("tr");
+      for (const titre of ["Année", "Total", "Moyenne*", "Périodes"]) {
+        const th = document.createElement("th");
+        th.textContent = titre;
+        entete.appendChild(th);
+      }
+      tableau.appendChild(entete);
+
+      for (const annee of annees) {
+        const lignesAnnee = toutes.filter(function (l) { return anneeDe(l.p) === annee && l.total > 0; });
+        let total = 0;
+        for (const l of lignesAnnee) total += l.total;
+
+        // Moyenne calculée sur les périodes terminées seulement
+        const terminees = lignesAnnee.filter(function (l) { return l.p.fin !== null && l.p.fin < aujourdhui; });
+        let sommeTerminees = 0;
+        for (const l of terminees) sommeTerminees += l.total;
+
+        const tr = document.createElement("tr");
+        const cellules = [
+          annee,
+          formatEuro(total),
+          terminees.length > 0 ? formatEuro(sommeTerminees / terminees.length) : "–",
+          String(lignesAnnee.length)
+        ];
+        for (const texte of cellules) {
+          const td = document.createElement("td");
+          td.textContent = texte;
+          tr.appendChild(td);
+        }
+        tableau.appendChild(tr);
+      }
+      const defilement = document.createElement("div");
+      defilement.className = "defilement";
+      defilement.appendChild(tableau);
+      recapAnnuel.appendChild(defilement);
+
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = "* Moyenne des périodes terminées de l'année.";
+      recapAnnuel.appendChild(note);
+
+      // 2) La liste déroulante des années
+      selectAnneeRecap.innerHTML = "";
+      for (const a of annees) selectAnneeRecap.add(new Option(a, a));
+      selectAnneeRecap.value = anneeRecap;
+
+      // 3) Le détail des périodes de l'année choisie (la plus récente d'abord)
+      // On saute les périodes vides, sauf la période en cours
+      const lignes = toutes
+        .filter(function (l) { return anneeDe(l.p) === anneeRecap && (l.total > 0 || l.p.debut === courante.debut); })
+        .reverse();
 
       if (lignes.length === 0) {
-        messageVide(recap, "Aucune dépense enregistrée.");
+        messageVide(recap, "Aucune dépense enregistrée cette année-là.");
         return;
-      }
-
-      // Moyenne des périodes terminées
-      const terminees = lignes.filter(function (l) { return l.p.fin !== null && l.p.fin < aujourdhui && l.total > 0; });
-      if (terminees.length > 0) {
-        let somme = 0;
-        for (const l of terminees) somme += l.total;
-        const moyenne = document.createElement("p");
-        moyenne.className = "note";
-        moyenne.textContent = "Dépense moyenne des périodes terminées : " + formatEuro(somme / terminees.length) +
-          " (sur " + terminees.length + ").";
-        moyenne.style.marginTop = "0";
-        recap.appendChild(moyenne);
       }
 
       for (const l of lignes) {
@@ -1265,6 +1362,186 @@
       btnRecap.textContent = sectionRecap.hidden ? "📊 Récapitulatif par mois" : "Masquer le récapitulatif";
       afficherRecap();
       if (!sectionRecap.hidden) sectionRecap.scrollIntoView({ behavior: "smooth" });
+    });
+
+    // ---- Comparateur : on choisit des périodes (de 2 à 6) et on les compare côte à côte ----
+    let comparees = [];   // débuts des périodes choisies
+
+    // "novembre 2026 (27/10 – 26/11)"
+    function textePeriode(p) {
+      return libellePeriode(p) + " (" + formatCourt(p.debut) + " – " + formatCourt(p.finPrevue) + ")";
+    }
+
+    function afficherComparateur() {
+      comparateur.innerHTML = "";
+      if (sectionComparateur.hidden) return;
+
+      if (periodes.length < 2) {
+        messageVide(comparateur, "Il faut au moins deux périodes pour comparer.");
+        return;
+      }
+
+      // On retire les périodes qui n'existent plus ; au départ on propose la période affichée et la précédente
+      comparees = comparees.filter(function (id) {
+        return periodes.some(function (p) { return p.debut === id; });
+      });
+      if (comparees.length < 2) {
+        const affichee = periodeAffichee();
+        const i = periodes.findIndex(function (p) { return p.debut === affichee.debut; });
+        const autre = i > 0 ? periodes[i - 1] : periodes[i + 1];
+        comparees = [autre.debut, affichee.debut];
+      }
+
+      // 1) Une liste de choix par période comparée
+      comparees.forEach(function (id, k) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-comparee";
+
+        const select = document.createElement("select");
+        for (const p of periodes.slice().reverse()) select.add(new Option(textePeriode(p), p.debut));
+        select.value = id;
+        select.addEventListener("change", function () {
+          comparees[k] = select.value;
+          afficherComparateur();
+        });
+        ligne.appendChild(select);
+
+        // On peut retirer une période tant qu'il en reste au moins deux
+        if (comparees.length > 2) {
+          const retirer = document.createElement("button");
+          retirer.textContent = "✕";
+          retirer.className = "petit danger";
+          retirer.setAttribute("aria-label", "Retirer cette période");
+          retirer.addEventListener("click", function () {
+            comparees.splice(k, 1);
+            afficherComparateur();
+          });
+          ligne.appendChild(retirer);
+        }
+        comparateur.appendChild(ligne);
+      });
+
+      if (comparees.length < 6) {
+        const ajouter = document.createElement("button");
+        ajouter.textContent = "+ Ajouter une période";
+        ajouter.className = "petit secondaire";
+        ajouter.addEventListener("click", function () {
+          // On propose la période la plus récente qui n'est pas déjà choisie
+          const libre = periodes.slice().reverse().find(function (p) { return !comparees.includes(p.debut); });
+          if (libre) {
+            comparees.push(libre.debut);
+            afficherComparateur();
+          }
+        });
+        comparateur.appendChild(ajouter);
+      }
+
+      // 2) Le tableau : les périodes sont classées dans l'ordre chronologique
+      const ids = Array.from(new Set(comparees)).sort();
+      const colonnes = ids.map(function (id) {
+        return chiffresPeriode(periodes.find(function (p) { return p.debut === id; }));
+      });
+      if (colonnes.length < 2) {
+        messageVide(comparateur, "Choisis deux périodes différentes.");
+        return;
+      }
+
+      // Lignes : les catégories qui ont des dépenses dans au moins une des périodes
+      const lignesCat = [];
+      for (const cat of categories) {
+        if (colonnes.some(function (c) { return (c.totaux[cat.id] || 0) > 0; })) lignesCat.push({ id: cat.id, nom: cat.nom });
+      }
+      for (const c of colonnes) {
+        for (const id in c.totaux) {   // catégories inconnues (ne devrait pas arriver)
+          if (c.totaux[id] > 0 && !lignesCat.some(function (x) { return x.id === id; })) lignesCat.push({ id: id, nom: id });
+        }
+      }
+
+      if (lignesCat.length === 0) {
+        messageVide(comparateur, "Aucune dépense dans ces périodes.");
+        return;
+      }
+
+      const aujourdhui = dateDuJour();
+      const court = { month: "short", year: "2-digit" };   // ex. "nov. 26"
+      const avecEcart = colonnes.length === 2;             // l'écart n'a de sens qu'entre deux périodes
+      let partiel = false;
+
+      const tableau = document.createElement("table");
+      tableau.className = "tableau";
+
+      // En-tête : nom court de la période et nombre de jours
+      const entete = document.createElement("tr");
+      const thCat = document.createElement("th");
+      thCat.textContent = "Catégorie";
+      entete.appendChild(thCat);
+      for (const c of colonnes) {
+        const incomplete = c.p.fin === null || c.p.fin >= aujourdhui;   // période pas encore terminée
+        if (incomplete) partiel = true;
+        const th = document.createElement("th");
+        th.appendChild(document.createTextNode(libelleMois(c.p.moisFin, court) + (incomplete ? "*" : "")));
+        const jours = document.createElement("small");
+        jours.textContent = (joursEntre(c.p.debut, c.p.finPrevue) + 1) + " j";
+        th.appendChild(jours);
+        entete.appendChild(th);
+      }
+      if (avecEcart) {
+        const thEcart = document.createElement("th");
+        thEcart.textContent = "Écart";
+        entete.appendChild(thEcart);
+      }
+      tableau.appendChild(entete);
+
+      // Ajoute une ligne au tableau : un nom, un montant par période, et l'écart si on compare deux périodes
+      function ajouterLigne(nom, valeurs, classe, avecEcartLigne) {
+        const tr = document.createElement("tr");
+        if (classe) tr.className = classe;
+        const cellules = [nom].concat(valeurs.map(formatEuro));
+        if (avecEcart) cellules.push(avecEcartLigne ? texteEcart(valeurs[0], valeurs[1]) : "");
+        cellules.forEach(function (texte, k) {
+          const td = document.createElement("td");
+          td.textContent = texte;
+          // Colonne d'écart : dépenser plus = hausse (rouge), dépenser moins = baisse (vert)
+          if (avecEcart && avecEcartLigne && k === cellules.length - 1 && valeurs[0] !== valeurs[1]) {
+            td.className = valeurs[1] > valeurs[0] ? "hausse" : "baisse";
+          }
+          tr.appendChild(td);
+        });
+        tableau.appendChild(tr);
+      }
+
+      for (const cat of lignesCat) {
+        ajouterLigne(cat.nom, colonnes.map(function (c) { return c.totaux[cat.id] || 0; }), "", true);
+      }
+      ajouterLigne("Total", colonnes.map(function (c) { return c.total; }), "total", true);
+      if (colonnes.some(function (c) { return c.budget > 0; })) {
+        ajouterLigne("Budget", colonnes.map(function (c) { return c.budget; }), "budget", false);
+      }
+
+      const defilement = document.createElement("div");
+      defilement.className = "defilement";
+      defilement.appendChild(tableau);
+      comparateur.appendChild(defilement);
+
+      // Remarques utiles pour bien lire le tableau
+      const durees = new Set(colonnes.map(function (c) { return joursEntre(c.p.debut, c.p.finPrevue); }));
+      const remarques = [];
+      if (durees.size > 1) remarques.push("Les périodes n'ont pas toutes la même durée (indiquée sous chaque nom).");
+      if (partiel) remarques.push("* Période non terminée : les totaux sont partiels.");
+      for (const texte of remarques) {
+        const p = document.createElement("p");
+        p.className = "note";
+        p.textContent = texte;
+        comparateur.appendChild(p);
+      }
+    }
+
+    // Le bouton affiche ou masque le comparateur
+    btnComparer.addEventListener("click", function () {
+      sectionComparateur.hidden = !sectionComparateur.hidden;
+      btnComparer.textContent = sectionComparateur.hidden ? "⚖️ Comparer des périodes" : "Masquer le comparateur";
+      afficherComparateur();
+      if (!sectionComparateur.hidden) sectionComparateur.scrollIntoView({ behavior: "smooth" });
     });
 
     // ---- Graphique 1 : répartition par catégorie (anneau) ----
@@ -1489,17 +1766,6 @@
       if (lignes.length === 0) {
         messageVide(comparaison, "Aucune dépense à comparer.");
         return;
-      }
-
-      // Texte de l'écart : "+12,00 € (+8 %)"
-      function texteEcart(avantVal, actuelVal) {
-        const ecart = actuelVal - avantVal;
-        let texte = (ecart > 0 ? "+" : "") + formatEuro(ecart);
-        if (avantVal > 0) {
-          const pct = Math.round((ecart / avantVal) * 100);
-          texte += " (" + (pct > 0 ? "+" : "") + pct + " %)";
-        }
-        return texte;
       }
 
       const court = { month: "short", year: "2-digit" };   // ex. "nov. 26"
