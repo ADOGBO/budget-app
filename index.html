@@ -191,6 +191,16 @@
     .tableau th small { display: block; font-weight: 400; }
     .tableau tr.budget td { color: var(--gris); font-size: 13px; }
     #recap-annuel { margin-bottom: 16px; }
+
+    /* ---------- Onglets Commun / Perso ---------- */
+    .onglets { display: flex; gap: 8px; margin-top: 16px; }
+    button.onglet { margin: 0; background: #e8edf3; color: var(--encre); }
+    button.onglet.actif { background: var(--bleu); color: #fff; }
+
+    /* ---------- Page perso ---------- */
+    .enveloppe { padding: 10px 0; border-bottom: 1px solid var(--ligne); }
+    .total-env { display: flex; justify-content: space-between; margin-top: 12px; font-size: 18px; }
+    .negatif { color: var(--rouge); }
   </style>
 </head>
 
@@ -224,6 +234,15 @@
       <span>Connecté : <strong id="nom-utilisateur"></strong></span>
       <button id="btn-deconnexion" class="petit secondaire">Se déconnecter</button>
     </div>
+
+    <!-- Onglets : page commune ou page perso -->
+    <nav class="onglets">
+      <button id="onglet-commun" class="onglet actif">Commun</button>
+      <button id="onglet-perso" class="onglet">Perso</button>
+    </nav>
+
+    <!-- ===== PAGE COMMUNE ===== -->
+    <div id="page-commun">
 
     <!-- Rappel : s'affiche quand la période en cours aurait dû se terminer -->
     <div id="bandeau-periode" class="bandeau" hidden>
@@ -348,6 +367,11 @@
     </details>
 
     <button id="btn-export" class="secondaire">Exporter en CSV</button>
+    </div>
+    <!-- ===== fin de la page commune ===== -->
+
+    <!-- ===== PAGE PERSO : construite par le fichier perso.js ===== -->
+    <div id="page-perso" hidden></div>
   </main>
 
   <script type="module">
@@ -1123,6 +1147,7 @@
       afficherParJour();
       afficherRecap();
       afficherComparateur();
+      perso.rafraichir();
     }
 
     // ---- Résumé de la période : total général puis une ligne par catégorie ----
@@ -1950,6 +1975,49 @@
     // ======================================================================
     // 12) DÉMARRAGE : surveiller l'état de connexion
     // ======================================================================
+    // ======================================================================
+    // 12) PAGE PERSO (le code est dans perso.js) ET ONGLETS
+    // ======================================================================
+    const pageCommun = document.getElementById("page-commun");
+    const pagePerso = document.getElementById("page-perso");
+    const ongletCommun = document.getElementById("onglet-commun");
+    const ongletPerso = document.getElementById("onglet-perso");
+
+    // Version "vide" utilisée tant que perso.js n'est pas chargé (ou s'il est introuvable) :
+    // la page commune continue de fonctionner dans tous les cas.
+    let perso = { demarrer: function () {}, arreter: function () {}, rafraichir: function () {} };
+    let utilisateurCourant = null;
+
+    import("./perso.js")
+      .then(function (module) {
+        perso = module.initPerso({
+          conteneur: pagePerso,
+          firebase: { db, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy },
+          outils: { formatEuro, formatDate, dateDuJour },
+          periodes: function () { return periodes; },
+          periodeDuJour: periodeDuJour,
+          textePeriode: textePeriode
+        });
+        // Si la connexion a eu lieu avant la fin du chargement de perso.js
+        if (utilisateurCourant) perso.demarrer(utilisateurCourant);
+      })
+      .catch(function (erreur) {
+        console.error("perso.js introuvable :", erreur);
+        pagePerso.textContent = "Le fichier perso.js est introuvable : ajoute-le au dépôt GitHub, à côté d'index.html.";
+      });
+
+    // Affiche la page commune ou la page perso
+    function afficherOnglet(nom) {
+      const surPerso = (nom === "perso");
+      pageCommun.hidden = surPerso;
+      pagePerso.hidden = !surPerso;
+      ongletCommun.classList.toggle("actif", !surPerso);
+      ongletPerso.classList.toggle("actif", surPerso);
+      if (surPerso) perso.rafraichir();
+    }
+    ongletCommun.addEventListener("click", function () { afficherOnglet("commun"); });
+    ongletPerso.addEventListener("click", function () { afficherOnglet("perso"); });
+
     majCategories();   // on remplit déjà la liste avec les catégories par défaut
 
     // Cette fonction s'exécute au chargement, puis à chaque connexion / déconnexion.
@@ -1963,6 +2031,8 @@
         demarrerEcouteSeuils();
         demarrerEcouteCategories();
         demarrerEcoutePeriodes();
+        utilisateurCourant = user;
+        perso.demarrer(user);
       } else {
         ecranConnexion.hidden = false;
         ecranAppli.hidden = true;
@@ -1970,6 +2040,9 @@
         if (arreterEcouteSeuils) { arreterEcouteSeuils(); arreterEcouteSeuils = null; }
         if (arreterEcouteCategories) { arreterEcouteCategories(); arreterEcouteCategories = null; }
         if (arreterEcoutePeriodes) { arreterEcoutePeriodes(); arreterEcoutePeriodes = null; }
+        utilisateurCourant = null;
+        perso.arreter();
+        afficherOnglet("commun");
         liste.innerHTML = "";
       }
     });
